@@ -61,6 +61,13 @@ pip install -e .[dev]
 python -m cgns_gui.app
 ```
 
+### 键盘快捷键
+
+- `R`：重置当前视角。
+- `W`：切换至线框模式。
+- `S`：切换至表面模式。
+- `O`：显示/隐藏坐标轴指南。
+
 ## 文档索引
 
 - `docs/development-plan.md`：详细开发计划与任务分解。

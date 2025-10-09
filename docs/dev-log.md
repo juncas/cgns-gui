@@ -24,3 +24,4 @@
 - 左侧栏加入 Section 信息面板，实时显示名称、类型、单元数、点数与索引范围。
 - 新增重置视角按钮与 VTK 坐标轴小部件，保持 Trackball Camera 交互一致。
 - 扩展 GUI 测试覆盖工具栏视角控制，确保在 headless 环境触发安全。
+- 引入 `InteractionController` 管理键盘快捷键（R/S/W/O），可扩展后续交互事件。

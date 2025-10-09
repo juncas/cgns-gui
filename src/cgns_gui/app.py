@@ -28,6 +28,7 @@ from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkRenderingCore import vtkRenderer
 
+from .interaction import InteractionController
 from .loader import CgnsLoader
 from .model import CgnsModel, Section, Zone
 from .scene import RenderStyle, SceneManager
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
         self._orientation_widget: vtkOrientationMarkerWidget | None = None
         self._axes_actor: vtkAxesActor | None = None
         self._orientation_action: QAction | None = None
+        self._interaction_controller = InteractionController()
         self._setup_renderer()
         self._create_actions()
         self._selection_controller = SelectionController(
@@ -111,6 +113,7 @@ class MainWindow(QMainWindow):
         if interactor is not None:
             interactor_style = vtkInteractorStyleTrackballCamera()
             interactor.SetInteractorStyle(interactor_style)
+            self._interaction_controller.attach(interactor)
             self._ensure_orientation_widget(interactor)
         self.vtk_widget.Start()
 
@@ -176,6 +179,11 @@ class MainWindow(QMainWindow):
         self._orientation_action.triggered.connect(self._toggle_orientation_marker)
         toolbar.addAction(self._orientation_action)
 
+        self._interaction_controller.register_shortcut("r", self._reset_camera)
+        self._interaction_controller.register_shortcut("w", self._activate_wireframe)
+        self._interaction_controller.register_shortcut("s", self._activate_surface)
+        self._interaction_controller.register_shortcut("o", self._toggle_orientation_shortcut)
+
     def _open_dialog(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -200,6 +208,9 @@ class MainWindow(QMainWindow):
             self._orientation_widget.SetEnabled(1 if checked else 0)
             if checked:
                 self._orientation_widget.InteractiveOn()
+            else:
+                self._orientation_widget.InteractiveOff()
+        self.vtk_widget.GetRenderWindow().Render()
 
     def _ensure_orientation_widget(self, interactor) -> None:
         if self._orientation_widget is not None:
@@ -217,6 +228,7 @@ class MainWindow(QMainWindow):
         widget.InteractiveOn()
         if self._orientation_action and not self._orientation_action.isChecked():
             widget.SetEnabled(0)
+            widget.InteractiveOff()
         self._orientation_widget = widget
 
     def _set_surface_mode(self, checked: bool) -> None:
@@ -226,6 +238,28 @@ class MainWindow(QMainWindow):
     def _set_wireframe_mode(self, checked: bool) -> None:
         if checked:
             self.scene.set_render_style(RenderStyle.WIREFRAME)
+
+
+    def _activate_surface(self) -> None:
+        self._set_surface_mode(True)
+        if self._surface_action is not None:
+            self._surface_action.setChecked(True)
+        if self._wireframe_action is not None:
+            self._wireframe_action.setChecked(False)
+
+    def _activate_wireframe(self) -> None:
+        self._set_wireframe_mode(True)
+        if self._wireframe_action is not None:
+            self._wireframe_action.setChecked(True)
+        if self._surface_action is not None:
+            self._surface_action.setChecked(False)
+
+    def _toggle_orientation_shortcut(self) -> None:
+        if self._orientation_action is None:
+            return
+        new_state = not self._orientation_action.isChecked()
+        self._orientation_action.setChecked(new_state)
+        self._toggle_orientation_marker(new_state)
 
 
 class _ModelTreeWidget(QTreeWidget):
