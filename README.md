@@ -54,12 +54,24 @@ pip install -e .[dev]
 - 支持在树与视口之间同步选中 Section，拾取后自动高亮显示。
 - Section 信息面板展示当前选中单元的类型、数量与索引范围。
 - Trackball Camera 交互默认启用（旋转/缩放/平移），并提供“重置视角”按钮与坐标轴指南小部件。
+- 状态栏展示加载进度与操作提示，异常时弹出对话框提醒。
+- “设置”对话框支持切换背景色与渲染模式。
 
 开发阶段建议使用以下命令行启动脚本（示例）：
 
 ```bash
 python -m cgns_gui.app
 ```
+
+如处于无图形环境，可使用 `--offscreen` 开关或设置 `QT_QPA_PLATFORM=offscreen`：
+
+```bash
+python -m cgns_gui.app --offscreen
+```
+
+如需显示真实窗口，确认环境变量 `QT_QPA_PLATFORM` 未固定为 `offscreen`（可执行 `unset QT_QPA_PLATFORM` 或将其设为 `xcb`）。
+
+若界面出现乱码（中文显示为方块），请安装支持 CJK 的字体（推荐 `Noto Sans CJK` 或 `WenQuanYi Micro Hei`），或在系统已有相应字体后重新启动程序。
 
 ### 键盘快捷键
 

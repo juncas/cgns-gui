@@ -3,19 +3,30 @@
 from __future__ import annotations
 
 import sys
+import os
+from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import MutableMapping
 
 # VTK requires explicit imports for rendering backends
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-from PySide6.QtCore import QModelIndex, Qt
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtCore import QModelIndex, Qt, Signal
+from PySide6.QtGui import QAction, QActionGroup, QFont, QFontDatabase
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
+    QMessageBox,
     QMainWindow,
+    QProgressBar,
+    QSlider,
     QSplitter,
+    QStatusBar,
     QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
@@ -33,6 +44,67 @@ from .loader import CgnsLoader
 from .model import CgnsModel, Section, Zone
 from .scene import RenderStyle, SceneManager
 from .selection import SelectionController
+from .i18n import install_translators
+
+BACKGROUND_OPTIONS: dict[str, tuple[float, float, float]] = {
+    "Dark Slate": (0.1, 0.1, 0.12),
+    "Carbon Black": (0.05, 0.05, 0.07),
+    "Light Gray": (0.85, 0.85, 0.9),
+}
+
+DEFAULT_BACKGROUND_NAME = "Dark Slate"
+
+RENDER_STYLE_LABELS: dict[RenderStyle, str] = {
+    RenderStyle.SURFACE: "Surface",
+    RenderStyle.WIREFRAME: "Wireframe",
+}
+
+
+@dataclass
+class ViewerSettings:
+    background: str
+    render_style: RenderStyle
+
+
+def _prepare_environment(
+    force_offscreen: bool,
+    environ: MutableMapping[str, str] | None = None,
+) -> None:
+    """Prepare Qt/VTK environment variables before creating QApplication."""
+
+    if environ is None:
+        environ = os.environ
+
+    platform = environ.get("QT_QPA_PLATFORM")
+    display = environ.get("DISPLAY")
+    wayland = environ.get("WAYLAND_DISPLAY")
+
+    if environ.get("CGNS_GUI_FORCE_OFFSCREEN") == "1":
+        force_offscreen = True
+
+    if force_offscreen or (platform is None and not display and not wayland):
+        environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        platform = environ.get("QT_QPA_PLATFORM")
+
+    if platform == "offscreen":
+        environ.setdefault("VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN", "1")
+
+
+def _configure_application_font(app: QApplication) -> None:
+    """Ensure the UI uses a font that supports CJK characters when available."""
+
+    preferred_fonts = (
+        "Noto Sans CJK SC",
+        "WenQuanYi Micro Hei",
+        "Source Han Sans SC",
+        "Microsoft YaHei",
+        "PingFang SC",
+    )
+    families = {family.lower() for family in QFontDatabase().families()}
+    for name in preferred_fonts:
+        if name.lower() in families:
+            app.setFont(QFont(name))
+            return
 
 
 class MainWindow(QMainWindow):
@@ -40,7 +112,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, parent: QWidget | None = None) -> None:  # noqa: D401
         super().__init__(parent)
-        self.setWindowTitle("CGNS Viewer")
+        self.setWindowTitle(self.tr("CGNS Viewer"))
         self.resize(1024, 768)
 
         self._model: CgnsModel | None = None
@@ -86,6 +158,19 @@ class MainWindow(QMainWindow):
         self._axes_actor: vtkAxesActor | None = None
         self._orientation_action: QAction | None = None
         self._interaction_controller = InteractionController()
+        self._toolbar: QToolBar | None = None
+        self._status_bar: QStatusBar = self.statusBar()
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 0)
+        self._progress.setVisible(False)
+        self._status_bar.addPermanentWidget(self._progress)
+        self._status_bar.showMessage(self.tr("Ready"))
+        self._background_name = DEFAULT_BACKGROUND_NAME
+        self._viewer_settings = ViewerSettings(
+            background=self._background_name,
+            render_style=RenderStyle.SURFACE,
+        )
+        self._loading_active = False
         self._setup_renderer()
         self._create_actions()
         self._selection_controller = SelectionController(
@@ -95,6 +180,7 @@ class MainWindow(QMainWindow):
             self,
         )
         self._selection_controller.sectionChanged.connect(self._on_section_changed)
+        self.details.transparencyChanged.connect(self._on_section_transparency_changed)
         self.details.clear()
 
     def _setup_renderer(self) -> None:
@@ -102,7 +188,7 @@ class MainWindow(QMainWindow):
 
         render_window = self.vtk_widget.GetRenderWindow()
         render_window.AddRenderer(self.renderer)
-        self.renderer.SetBackground(0.1, 0.1, 0.12)
+        self._apply_background(self._background_name)
 
     def start(self) -> None:
         """Initialise the interactor and start rendering."""
@@ -120,8 +206,23 @@ class MainWindow(QMainWindow):
     def load_file(self, path: str) -> None:
         """Load a CGNS file and refresh the UI."""
 
-        model = self._loader.load(path)
-        self.load_model(model)
+        filename = Path(path).name
+        self._show_loading(filename)
+        try:
+            model = self._loader.load(path)
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(
+                self.tr("Failed to read {filename}").format(filename=filename),
+                str(exc),
+            )
+        else:
+            self.load_model(model)
+            self._status_bar.showMessage(
+                self.tr("Load complete: {filename}").format(filename=filename),
+                5000,
+            )
+        finally:
+            self._hide_loading()
 
     def load_model(self, model: CgnsModel) -> None:
         self._model = model
@@ -138,14 +239,25 @@ class MainWindow(QMainWindow):
             return
 
         zone, section = info
-        self.details.update_section(zone, section)
+        transparency = 0.0
+        if key is not None:
+            value = self.scene.get_section_transparency(key)
+            if value is not None:
+                transparency = value
+        self.details.update_section(zone, section, key=key, transparency=transparency)
+
+    def _on_section_transparency_changed(self, payload: tuple[tuple[str, int], float]) -> None:
+        key, transparency = payload
+        self.scene.set_section_transparency(key, transparency)
+        self.vtk_widget.GetRenderWindow().Render()
 
     def _create_actions(self) -> None:
         toolbar = QToolBar("main", self)
         toolbar.setMovable(False)
         self.addToolBar(Qt.TopToolBarArea, toolbar)
+        self._toolbar = toolbar
 
-        open_action = QAction("打开 CGNS", self)
+        open_action = QAction(self.tr("Open CGNS..."), self)
         open_action.triggered.connect(self._open_dialog)
         toolbar.addAction(open_action)
 
@@ -154,14 +266,14 @@ class MainWindow(QMainWindow):
         self._render_group = QActionGroup(self)
         self._render_group.setExclusive(True)
 
-        self._surface_action = QAction("表面", self)
+        self._surface_action = QAction(self.tr("Surface"), self)
         self._surface_action.setCheckable(True)
         self._surface_action.setChecked(True)
         self._surface_action.triggered.connect(self._set_surface_mode)
         self._render_group.addAction(self._surface_action)
         toolbar.addAction(self._surface_action)
 
-        self._wireframe_action = QAction("线框", self)
+        self._wireframe_action = QAction(self.tr("Wireframe"), self)
         self._wireframe_action.setCheckable(True)
         self._wireframe_action.triggered.connect(self._set_wireframe_mode)
         self._render_group.addAction(self._wireframe_action)
@@ -169,11 +281,11 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        reset_action = QAction("重置视角", self)
+        reset_action = QAction(self.tr("Reset Camera"), self)
         reset_action.triggered.connect(self._reset_camera)
         toolbar.addAction(reset_action)
 
-        self._orientation_action = QAction("显示坐标轴", self)
+        self._orientation_action = QAction(self.tr("Show Axes"), self)
         self._orientation_action.setCheckable(True)
         self._orientation_action.setChecked(True)
         self._orientation_action.triggered.connect(self._toggle_orientation_marker)
@@ -184,10 +296,32 @@ class MainWindow(QMainWindow):
         self._interaction_controller.register_shortcut("s", self._activate_surface)
         self._interaction_controller.register_shortcut("o", self._toggle_orientation_shortcut)
 
+        toolbar.addSeparator()
+
+        settings_action = QAction(self.tr("Settings"), self)
+        settings_action.triggered.connect(self._open_settings)
+        toolbar.addAction(settings_action)
+
+    def _create_settings_dialog(self) -> "_SettingsDialog":
+        return _SettingsDialog(self._viewer_settings, self)
+
+    def _open_settings(self) -> None:
+        dialog = self._create_settings_dialog()
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        settings = dialog.selected_settings()
+        self._apply_background(settings.background)
+        if settings.render_style is RenderStyle.SURFACE:
+            self._activate_surface()
+        else:
+            self._activate_wireframe()
+        self._status_bar.showMessage(self.tr("Settings updated"), 3000)
+
     def _open_dialog(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择 CGNS 文件",
+            self.tr("Select CGNS File"),
             str(Path.home()),
             "CGNS Files (*.cgns *.hdf5 *.h5);;All Files (*)",
         )
@@ -234,10 +368,14 @@ class MainWindow(QMainWindow):
     def _set_surface_mode(self, checked: bool) -> None:
         if checked:
             self.scene.set_render_style(RenderStyle.SURFACE)
+            self._viewer_settings.render_style = RenderStyle.SURFACE
+            self.vtk_widget.GetRenderWindow().Render()
 
     def _set_wireframe_mode(self, checked: bool) -> None:
         if checked:
             self.scene.set_render_style(RenderStyle.WIREFRAME)
+            self._viewer_settings.render_style = RenderStyle.WIREFRAME
+            self.vtk_widget.GetRenderWindow().Render()
 
 
     def _activate_surface(self) -> None:
@@ -261,13 +399,93 @@ class MainWindow(QMainWindow):
         self._orientation_action.setChecked(new_state)
         self._toggle_orientation_marker(new_state)
 
+    def _apply_background(self, name: str) -> None:
+        color = BACKGROUND_OPTIONS.get(name)
+        if color is None:
+            name = DEFAULT_BACKGROUND_NAME
+            color = BACKGROUND_OPTIONS[name]
+        self.renderer.SetBackground(*color)
+        self._background_name = name
+        self._viewer_settings.background = name
+        render_window = self.vtk_widget.GetRenderWindow()
+        render_window.Render()
+
+    def _show_loading(self, filename: str) -> None:
+        self._loading_active = True
+        self._progress.setVisible(True)
+        if self._toolbar is not None:
+            self._toolbar.setEnabled(False)
+        self._status_bar.showMessage(
+            self.tr("Loading: {filename}").format(filename=filename)
+        )
+        QApplication.processEvents()
+
+    def _hide_loading(self) -> None:
+        self._progress.setVisible(False)
+        if self._toolbar is not None:
+            self._toolbar.setEnabled(True)
+        if self._loading_active:
+            self._status_bar.showMessage(self.tr("Ready"))
+        self._loading_active = False
+
+    def _show_error(self, title: str, detail: str) -> None:
+        QMessageBox.critical(self, title, detail)
+        self._status_bar.showMessage(self.tr("Load failed"), 5000)
+
+
+class _SettingsDialog(QDialog):
+    def __init__(self, settings: ViewerSettings, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Display Settings"))
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.background_combo = QComboBox()
+        for name in BACKGROUND_OPTIONS:
+            self.background_combo.addItem(self.tr(name), name)
+        index = self.background_combo.findData(settings.background)
+        if index < 0:
+            index = 0
+        self.background_combo.setCurrentIndex(index)
+
+        self.render_combo = QComboBox()
+        for style, label in RENDER_STYLE_LABELS.items():
+            self.render_combo.addItem(self.tr(label), style.value)
+        current_index = self.render_combo.findData(settings.render_style.value)
+        if current_index >= 0:
+            self.render_combo.setCurrentIndex(current_index)
+        else:
+            self.render_combo.setCurrentIndex(0)
+
+        form.addRow(self.tr("Background Color"), self.background_combo)
+        form.addRow(self.tr("Render Style"), self.render_combo)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_settings(self) -> ViewerSettings:
+        data = self.background_combo.currentData()
+        background = data if isinstance(data, str) else DEFAULT_BACKGROUND_NAME
+        style_value = self.render_combo.currentData()
+        try:
+            render_style = RenderStyle(style_value)
+        except ValueError:
+            render_style = RenderStyle.SURFACE
+        return ViewerSettings(background=background, render_style=render_style)
+
 
 class _ModelTreeWidget(QTreeWidget):
     """Tree widget to display CGNS zones and sections."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setHeaderLabels(["名称", "类型", "单元数"])
+        self.setHeaderLabels([self.tr("Name"), self.tr("Type"), self.tr("Cells")])
         self.setColumnWidth(0, 200)
         self._section_index: dict[tuple[str, int], QTreeWidgetItem] = {}
         self._section_data: dict[tuple[str, int], tuple[Zone, Section]] = {}
@@ -277,7 +495,7 @@ class _ModelTreeWidget(QTreeWidget):
         self._section_index.clear()
         self._section_data.clear()
         for zone in model.zones:
-            zone_item = QTreeWidgetItem([zone.name, "Zone", str(zone.total_cells)])
+            zone_item = QTreeWidgetItem([zone.name, self.tr("Zone"), str(zone.total_cells)])
             self.addTopLevelItem(zone_item)
             self._add_sections(zone_item, zone)
         self.expandAll()
@@ -324,6 +542,8 @@ class _ModelTreeWidget(QTreeWidget):
 class SectionDetailsWidget(QWidget):
     """Display basic metadata for the selected section."""
 
+    transparencyChanged = Signal(tuple)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QFormLayout(self)
@@ -336,6 +556,22 @@ class SectionDetailsWidget(QWidget):
         self._cells_label = QLabel()
         self._points_label = QLabel()
         self._range_label = QLabel()
+        self._transparency_slider = QSlider(Qt.Horizontal)
+        self._transparency_slider.setRange(0, 100)
+        self._transparency_slider.setSingleStep(5)
+        self._transparency_slider.setPageStep(10)
+        self._transparency_slider.setEnabled(False)
+        self._transparency_label = QLabel("0%")
+        self._transparency_label.setMinimumWidth(40)
+        controls = QWidget()
+        controls_layout = QHBoxLayout(controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(6)
+        controls_layout.addWidget(self._transparency_slider, 1)
+        controls_layout.addWidget(self._transparency_label, 0)
+        self._current_key: tuple[str, int] | None = None
+        self._updating_slider = False
+        self._transparency_slider.valueChanged.connect(self._on_slider_value_changed)
 
         for label in (
             self._zone_label,
@@ -347,19 +583,30 @@ class SectionDetailsWidget(QWidget):
         ):
             label.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
-        layout.addRow("Zone", self._zone_label)
-        layout.addRow("Section", self._name_label)
-        layout.addRow("Type", self._type_label)
-        layout.addRow("Cells", self._cells_label)
-        layout.addRow("Points", self._points_label)
-        layout.addRow("Range", self._range_label)
+        layout.addRow(self.tr("Zone"), self._zone_label)
+        layout.addRow(self.tr("Section"), self._name_label)
+        layout.addRow(self.tr("Type"), self._type_label)
+        layout.addRow(self.tr("Cells"), self._cells_label)
+        layout.addRow(self.tr("Points"), self._points_label)
+        layout.addRow(self.tr("Range"), self._range_label)
+        layout.addRow(self.tr("Transparency"), controls)
 
         self.clear()
 
     def clear(self) -> None:
         self._set_text("-", "-", "-", "-", "-", "-")
+        self._current_key = None
+        self._set_transparency_value(0.0)
+        self._transparency_slider.setEnabled(False)
 
-    def update_section(self, zone: Zone, section: Section) -> None:
+    def update_section(
+        self,
+        zone: Zone,
+        section: Section,
+        *,
+        key: tuple[str, int] | None = None,
+        transparency: float | None = None,
+    ) -> None:
         mesh = section.mesh
         cell_count = mesh.connectivity.shape[0]
         point_count = mesh.points.shape[0]
@@ -371,6 +618,10 @@ class SectionDetailsWidget(QWidget):
             str(point_count),
             f"{section.range[0]} - {section.range[1]}",
         )
+        self._current_key = key
+        value = 0.0 if transparency is None else float(max(0.0, min(1.0, transparency)))
+        self._set_transparency_value(value)
+        self._transparency_slider.setEnabled(key is not None)
 
     def _set_text(
         self,
@@ -398,17 +649,46 @@ class SectionDetailsWidget(QWidget):
             "cells": self._cells_label.text(),
             "points": self._points_label.text(),
             "range": self._range_label.text(),
+            "transparency": self._transparency_label.text(),
         }
+
+    def _set_transparency_value(self, value: float) -> None:
+        self._updating_slider = True
+        try:
+            self._transparency_slider.setValue(int(round(value * 100)))
+        finally:
+            self._updating_slider = False
+        self._transparency_label.setText(f"{int(round(value * 100))}%")
+
+    def _on_slider_value_changed(self, slider_value: int) -> None:
+        if self._updating_slider or self._current_key is None:
+            return
+        value = max(0.0, min(1.0, slider_value / 100.0))
+        self._transparency_label.setText(f"{int(round(value * 100))}%")
+        self.transparencyChanged.emit((self._current_key, value))
 
 
 def main(argv: list[str] | None = None) -> int:
     """Application entry point."""
 
     argv = list(sys.argv if argv is None else argv)
-    app = QApplication(argv)
+    force_offscreen = False
+    filtered: list[str] = []
+    for arg in argv:
+        if arg == "--offscreen":
+            force_offscreen = True
+            continue
+        filtered.append(arg)
+
+    _prepare_environment(force_offscreen)
+
+    app = QApplication(filtered)
     app.setApplicationName("CGNS Viewer")
     app.setOrganizationName("CGNS")
-    app.setAttribute(Qt.AA_EnableHighDpiScaling)
+    _configure_application_font(app)
+    translators = install_translators(app)
+    # retain references so translators stay in scope
+    setattr(app, "_cgns_gui_translators", translators)
 
     window = MainWindow()
     window.show()

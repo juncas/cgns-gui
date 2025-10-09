@@ -39,6 +39,48 @@ def test_scene_manager_creates_actor():
     assert renderer.GetActors().GetNumberOfItems() == 1
 
 
+def test_scene_manager_applies_default_transparency():
+    renderer = vtkRenderer()
+    scene = SceneManager(renderer)
+
+    volume_mesh = MeshData(
+        points=np.zeros((4, 3)),
+        connectivity=np.array([[0, 1, 2, 3]]),
+        cell_type="TETRA_4",
+    )
+    surface_mesh = MeshData(
+        points=np.zeros((3, 3)),
+        connectivity=np.array([[0, 1, 2]]),
+        cell_type="TRI_3",
+    )
+
+    volume_section = Section(
+        id=1,
+        name="Volume",
+        element_type="TETRA_4",
+        range=(1, 1),
+        mesh=volume_mesh,
+    )
+    surface_section = Section(
+        id=2,
+        name="Surface",
+        element_type="TRI_3",
+        range=(1, 1),
+        mesh=surface_mesh,
+    )
+    zone = Zone(name="Zone", sections=[volume_section, surface_section])
+
+    scene.load_model(CgnsModel(zones=[zone]))
+
+    volume_actor = scene.get_actor(("Zone", 1))
+    surface_actor = scene.get_actor(("Zone", 2))
+
+    assert volume_actor is not None
+    assert surface_actor is not None
+    assert volume_actor.GetProperty().GetOpacity() == pytest.approx(0.0)
+    assert surface_actor.GetProperty().GetOpacity() == pytest.approx(1.0)
+
+
 def test_scene_manager_default_render_style():
     renderer = vtkRenderer()
     scene = SceneManager(renderer)
@@ -85,6 +127,21 @@ def test_scene_manager_highlight_cycle():
     base_color = actor.GetProperty().GetColor()
     assert base_color == pytest.approx((0.2, 0.6, 0.9))
     assert actor.GetProperty().GetLineWidth() == pytest.approx(1.0)
+
+
+def test_scene_manager_allows_transparency_updates():
+    renderer = vtkRenderer()
+    scene = SceneManager(renderer)
+
+    scene.load_model(_sample_model())
+
+    key = ("Zone", 1)
+    actor = scene.get_actor(key)
+    assert actor is not None
+
+    scene.set_section_transparency(key, 0.3)
+    assert scene.get_section_transparency(key) == pytest.approx(0.3)
+    assert actor.GetProperty().GetOpacity() == pytest.approx(0.7)
 
 
 def test_scene_manager_key_lookup():

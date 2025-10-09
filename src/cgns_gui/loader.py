@@ -20,6 +20,16 @@ _SUPPORTED_ELEMENT_SIZES: dict[str, int] = {
     "HEXA_8": 8,
 }
 
+_ELEMENT_TYPE_BY_CODE: dict[int, str] = {
+    2: "BAR_2",
+    5: "TRI_3",
+    7: "QUAD_4",
+    10: "TETRA_4",
+    12: "PYRA_5",
+    13: "PENTA_6",
+    14: "HEXA_8",
+}
+
 
 class CgnsLoader:
     """Parse a subset of CGNS/HDF5 files."""
@@ -36,7 +46,7 @@ class CgnsLoader:
 
         with h5py.File(path, "r") as handle:
             zones: list[Zone] = []
-            for _, base_group in self._iter_children(handle, "Base_t"):
+            for _, base_group in self._iter_children(handle, ("Base_t", "CGNSBase_t")):
                 for zone_name, zone_group in self._iter_children(base_group, "Zone_t"):
                     zones.append(self._read_zone(zone_name, zone_group))
         return CgnsModel(zones=zones)
@@ -49,15 +59,11 @@ class CgnsLoader:
             start=1,
         ):
             mesh = self._read_section_mesh(section_group, points)
-            element_type = section_group.get("ElementType")
-            if element_type is None:
-                raise ValueError(f"Section {section_name} missing ElementType")
-            element_type_value = self._decode_dataset(element_type)
             sections.append(
                 Section(
                     id=section_idx,
                     name=section_name,
-                    element_type=element_type_value,
+                    element_type=mesh.cell_type,
                     range=(1, mesh.connectivity.shape[0]),
                     mesh=mesh,
                 )
@@ -74,19 +80,21 @@ class CgnsLoader:
 
         coord_arrays = []
         for axis in ("X", "Y", "Z"):
-            dataset = coords_group.get(f"Coordinate{axis}")
-            if dataset is None:
+            node = coords_group.get(f"Coordinate{axis}")
+            if node is None:
                 raise ValueError(f"Missing Coordinate{axis} in {coords_group.name}")
+            dataset = self._resolve_data_array(node)
             coord_arrays.append(np.asarray(dataset, dtype=float).reshape(-1))
         return np.column_stack(coord_arrays)
 
     def _read_section_mesh(self, section_group: h5py.Group, points: np.ndarray) -> MeshData:
-        element_type = section_group.get("ElementType")
-        conn_dataset = section_group.get("ElementConnectivity")
-        if element_type is None or conn_dataset is None:
-            raise ValueError(f"Section {section_group.name} missing connectivity information")
+        element_type_value = self._infer_element_type(section_group)
 
-        element_type_value = self._decode_dataset(element_type)
+        conn_node = section_group.get("ElementConnectivity")
+        if conn_node is None:
+            raise ValueError(f"Section {section_group.name} missing ElementConnectivity")
+        conn_dataset = self._resolve_data_array(conn_node)
+
         element_size = _SUPPORTED_ELEMENT_SIZES.get(element_type_value)
         if element_size is None:
             raise ValueError(f"Unsupported element type: {element_type_value}")
@@ -97,13 +105,21 @@ class CgnsLoader:
         return MeshData(points=points, connectivity=connectivity, cell_type=element_type_value)
 
     @staticmethod
-    def _iter_children(group: h5py.Group, label: str) -> Iterator[tuple[str, h5py.Group]]:
+    def _iter_children(
+        group: h5py.Group,
+        labels: str | tuple[str, ...],
+    ) -> Iterator[tuple[str, h5py.Group]]:
+        if isinstance(labels, str):
+            wanted = {labels}
+        else:
+            wanted = set(labels)
+
         for name, child in group.items():
             if isinstance(child, h5py.Group):
                 child_label = child.attrs.get("label")
                 if isinstance(child_label, bytes):
                     child_label = child_label.decode("utf-8")
-                if child_label == label:
+                if child_label in wanted:
                     yield name, child
 
     @staticmethod
@@ -116,3 +132,38 @@ class CgnsLoader:
         if isinstance(value, np.ndarray) and value.ndim == 0:
             return str(value.item())
         return str(value)
+
+    def _infer_element_type(self, section_group: h5py.Group) -> str:
+        element_node = section_group.get("ElementType")
+        if element_node is not None:
+            dataset = self._resolve_data_array(element_node)
+            return self._decode_dataset(dataset)
+
+        type_node = section_group.get(" data")
+        if isinstance(type_node, h5py.Dataset) and type_node.size:
+            code = int(type_node[0])
+            element_type = _ELEMENT_TYPE_BY_CODE.get(code)
+            if element_type in _SUPPORTED_ELEMENT_SIZES:
+                return element_type
+
+        name_attr = section_group.attrs.get("name")
+        if isinstance(name_attr, bytes):
+            name_attr = name_attr.decode("utf-8", errors="ignore")
+        if isinstance(name_attr, str):
+            upper = name_attr.upper()
+            for element_type in _SUPPORTED_ELEMENT_SIZES:
+                token = element_type.split("_")[0]
+                if token in upper:
+                    return element_type
+
+        raise ValueError(f"Unable to determine element type for {section_group.name}")
+
+    @staticmethod
+    def _resolve_data_array(node: h5py.Dataset | h5py.Group) -> h5py.Dataset:
+        if isinstance(node, h5py.Dataset):
+            return node
+        if isinstance(node, h5py.Group):
+            dataset = node.get(" data")
+            if isinstance(dataset, h5py.Dataset):
+                return dataset
+        raise ValueError(f"Unsupported CGNS data array layout at {node}")

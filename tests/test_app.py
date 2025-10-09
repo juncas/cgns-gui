@@ -12,9 +12,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 pytest.importorskip("vtkmodules.qt.QVTKRenderWindowInteractor")
 
-from PySide6.QtWidgets import QMainWindow, QToolBar
+from PySide6.QtWidgets import QDialog, QMainWindow, QToolBar
 
-from cgns_gui.app import MainWindow, SectionDetailsWidget, _ModelTreeWidget
+from cgns_gui.app import MainWindow, SectionDetailsWidget, _ModelTreeWidget, _prepare_environment
+from cgns_gui.scene import RenderStyle
 from cgns_gui.model import CgnsModel, MeshData, Section, Zone
 
 
@@ -93,10 +94,36 @@ def test_section_details_widget_updates(qtbot):
     assert snapshot["cells"] == "1"
     assert snapshot["points"] == "4"
     assert snapshot["range"] == "1 - 1"
+    assert snapshot["transparency"] == "0%"
 
     details.clear()
     cleared = details.snapshot()
     assert cleared["name"] == "-"
+    assert cleared["transparency"] == "0%"
+
+
+def test_section_details_widget_emits_transparency_signal(qtbot):
+    details = SectionDetailsWidget()
+    qtbot.addWidget(details)
+
+    mesh = MeshData(
+        points=np.zeros((4, 3)),
+        connectivity=np.array([[0, 1, 2]]),
+        cell_type="TRI_3",
+    )
+    section = Section(id=5, name="Wing Surface", element_type="TRI_3", range=(1, 1), mesh=mesh)
+    zone = Zone(name="Wing", sections=[section])
+    key = ("Wing", 5)
+
+    details.update_section(zone, section, key=key, transparency=0.2)
+
+    with qtbot.waitSignal(details.transparencyChanged, timeout=1000) as blocker:
+        slider = getattr(details, "_transparency_slider")
+        slider.setValue(80)
+
+    emitted_key, value = blocker.args[0]
+    assert emitted_key == key
+    assert value == pytest.approx(0.8)
 
 
 @pytest.mark.qt_no_exception_capture
@@ -111,8 +138,47 @@ def test_main_window_toolbar_camera_actions(qtbot):
     assert toolbars, "Main toolbar should be present"
     actions = {action.text(): action for action in toolbars[0].actions()}
 
-    assert "重置视角" in actions
-    assert "显示坐标轴" in actions
+    assert "Reset Camera" in actions
+    assert "Show Axes" in actions
 
-    actions["显示坐标轴"].trigger()
-    actions["显示坐标轴"].trigger()
+    actions["Show Axes"].trigger()
+    actions["Show Axes"].trigger()
+
+
+@pytest.mark.qt_no_exception_capture
+def test_open_settings_updates_preferences(qtbot, monkeypatch):
+    if _is_headless():
+        pytest.skip("Headless environment cannot validate VTK widget")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dialog = window._create_settings_dialog()
+    qtbot.addWidget(dialog)
+    bg_index = dialog.background_combo.findData("Light Gray")
+    if bg_index >= 0:
+        dialog.background_combo.setCurrentIndex(bg_index)
+    index = dialog.render_combo.findText("Wireframe")
+    dialog.render_combo.setCurrentIndex(index)
+
+    monkeypatch.setattr(window, "_create_settings_dialog", lambda: dialog)
+    monkeypatch.setattr(dialog, "exec", lambda: QDialog.Accepted)
+
+    window._open_settings()
+
+    assert window._background_name == "Light Gray"
+    assert window.scene.get_render_style() is RenderStyle.WIREFRAME
+    assert window._wireframe_action is not None and window._wireframe_action.isChecked()
+
+
+def test_prepare_environment_force_offscreen():
+    fake_env: dict[str, str] = {}
+    _prepare_environment(True, fake_env)
+    assert fake_env["QT_QPA_PLATFORM"] == "offscreen"
+    assert fake_env["VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN"] == "1"
+
+
+def test_prepare_environment_headless_default():
+    fake_env: dict[str, str] = {}
+    _prepare_environment(False, fake_env)
+    assert fake_env["QT_QPA_PLATFORM"] == "offscreen"

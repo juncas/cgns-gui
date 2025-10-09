@@ -48,6 +48,7 @@ class SceneManager:
         self._actors: dict[tuple[str, int], vtkActor] = {}
         self._actor_lookup: dict[vtkActor, tuple[str, int]] = {}
         self._base_colors: dict[tuple[str, int], tuple[float, float, float]] = {}
+        self._section_transparency: dict[tuple[str, int], float] = {}
         self._highlighted: tuple[str, int] | None = None
         self._color_palette = self._build_palette()
         self._style = RenderStyle.SURFACE
@@ -58,6 +59,7 @@ class SceneManager:
         self._actors.clear()
         self._actor_lookup.clear()
         self._base_colors.clear()
+        self._section_transparency.clear()
         self._highlighted = None
 
     @property
@@ -76,9 +78,12 @@ class SceneManager:
                 self._apply_style(actor)
                 self._renderer.AddActor(actor)
                 key = (zone.name, section.id)
+                transparency = self._default_transparency(section.element_type)
                 self._actors[key] = actor
                 self._actor_lookup[actor] = key
                 self._base_colors[key] = color
+                self._section_transparency[key] = transparency
+                self._apply_base_style(key, actor, color)
         if self._actors:
             self._renderer.ResetCamera()
 
@@ -156,9 +161,9 @@ class SceneManager:
         for section_key, actor in self._actors.items():
             base_color = self._base_colors.get(section_key)
             if section_key == key:
-                self._apply_highlight(actor, base_color)
+                self._apply_highlight(section_key, actor, base_color)
             else:
-                self._apply_base_style(actor, base_color)
+                self._apply_base_style(section_key, actor, base_color)
 
     def _apply_style(self, actor: vtkActor) -> None:
         prop = actor.GetProperty()
@@ -169,6 +174,7 @@ class SceneManager:
 
     def _apply_highlight(
         self,
+        key: tuple[str, int],
         actor: vtkActor,
         base_color: tuple[float, float, float] | None,
     ) -> None:
@@ -178,10 +184,11 @@ class SceneManager:
         prop.SetColor(*highlight)
         prop.SetLineWidth(2.0)
         prop.EdgeVisibilityOn()
-        prop.SetOpacity(1.0)
+        prop.SetOpacity(self._opacity_for_key(key))
 
     def _apply_base_style(
         self,
+        key: tuple[str, int],
         actor: vtkActor,
         base_color: tuple[float, float, float] | None,
     ) -> None:
@@ -190,7 +197,45 @@ class SceneManager:
             prop.SetColor(*base_color)
         prop.SetLineWidth(1.0)
         prop.EdgeVisibilityOn()
-        prop.SetOpacity(1.0)
+        prop.SetOpacity(self._opacity_for_key(key))
+
+    def set_section_transparency(self, key: tuple[str, int], value: float) -> None:
+        if key not in self._actors:
+            return
+        clamped = float(max(0.0, min(1.0, value)))
+        self._section_transparency[key] = clamped
+        base_color = self._base_colors.get(key)
+        actor = self._actors[key]
+        if self._highlighted == key:
+            self._apply_highlight(key, actor, base_color)
+        else:
+            self._apply_base_style(key, actor, base_color)
+
+    def get_section_transparency(self, key: tuple[str, int]) -> float | None:
+        return self._section_transparency.get(key)
+
+    def _opacity_for_key(self, key: tuple[str, int]) -> float:
+        transparency = self._section_transparency.get(key, 0.0)
+        return max(0.0, min(1.0, 1.0 - transparency))
+
+    @staticmethod
+    def _default_transparency(element_type: str) -> float:
+        volume_types = {
+            "TETRA_4",
+            "PYRA_5",
+            "PENTA_6",
+            "HEXA_8",
+        }
+        surface_types = {
+            "TRI_3",
+            "QUAD_4",
+        }
+        if element_type in volume_types:
+            return 1.0
+        if element_type in surface_types:
+            return 0.0
+        # Treat lines and unknown types as opaque by default
+        return 0.0
 
     @staticmethod
     def _build_palette():
