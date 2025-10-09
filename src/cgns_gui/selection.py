@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QTreeWidget
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkRenderingCore import vtkActor, vtkCellPicker
@@ -12,6 +12,8 @@ from .scene import SceneManager
 
 class SelectionController(QObject):
     """Coordinate section selection between the tree view and VTK actors."""
+
+    sectionChanged = Signal(object)
 
     def __init__(
         self,
@@ -52,6 +54,7 @@ class SelectionController(QObject):
             self._scene.highlight(None)
             if hasattr(self._tree, "select_section"):
                 self._tree.select_section(None)  # type: ignore[attr-defined]
+            self.sectionChanged.emit(None)
         finally:
             self._updating = False
 
@@ -66,6 +69,7 @@ class SelectionController(QObject):
         self._updating = True
         try:
             self._scene.highlight(key)
+            self.sectionChanged.emit(key)
         finally:
             self._updating = False
 
@@ -85,6 +89,7 @@ class SelectionController(QObject):
                 self._scene.highlight(None)
                 if hasattr(self._tree, "select_section"):
                     self._tree.select_section(None)  # type: ignore[attr-defined]
+            self.sectionChanged.emit(key)
         finally:
             self._updating = False
 

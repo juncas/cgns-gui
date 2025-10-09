@@ -12,6 +12,8 @@ from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFormLayout,
+    QLabel,
     QMainWindow,
     QSplitter,
     QToolBar,
@@ -25,7 +27,7 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 from vtkmodules.vtkRenderingCore import vtkRenderer
 
 from .loader import CgnsLoader
-from .model import CgnsModel, Zone
+from .model import CgnsModel, Section, Zone
 from .scene import RenderStyle, SceneManager
 from .selection import SelectionController
 
@@ -50,8 +52,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(splitter)
         self.setCentralWidget(central)
 
-        self.tree = _ModelTreeWidget(splitter)
-        splitter.addWidget(self.tree)
+        sidebar = QWidget(splitter)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSpacing(8)
+
+        self.tree = _ModelTreeWidget(sidebar)
+        sidebar_layout.addWidget(self.tree, 1)
+
+        self.details = SectionDetailsWidget(sidebar)
+        sidebar_layout.addWidget(self.details, 0)
+
+        splitter.addWidget(sidebar)
 
         vtk_container = QWidget(splitter)
         vtk_layout = QVBoxLayout(vtk_container)
@@ -75,6 +87,8 @@ class MainWindow(QMainWindow):
             self.vtk_widget,
             self,
         )
+        self._selection_controller.sectionChanged.connect(self._on_section_changed)
+        self.details.clear()
 
     def _setup_renderer(self) -> None:
         """Prepare renderer background and attach to the VTK widget."""
@@ -106,6 +120,15 @@ class MainWindow(QMainWindow):
         self.scene.load_model(model)
         self._selection_controller.sync_scene()
         self._selection_controller.clear()
+
+    def _on_section_changed(self, key: tuple[str, int] | None) -> None:
+        info = self.tree.section_info(key)
+        if info is None:
+            self.details.clear()
+            return
+
+        zone, section = info
+        self.details.update_section(zone, section)
 
     def _create_actions(self) -> None:
         toolbar = QToolBar("main", self)
@@ -161,10 +184,12 @@ class _ModelTreeWidget(QTreeWidget):
         self.setHeaderLabels(["名称", "类型", "单元数"])
         self.setColumnWidth(0, 200)
         self._section_index: dict[tuple[str, int], QTreeWidgetItem] = {}
+        self._section_data: dict[tuple[str, int], tuple[Zone, Section]] = {}
 
     def populate(self, model: CgnsModel) -> None:
         self.clear()
         self._section_index.clear()
+        self._section_data.clear()
         for zone in model.zones:
             zone_item = QTreeWidgetItem([zone.name, "Zone", str(zone.total_cells)])
             self.addTopLevelItem(zone_item)
@@ -179,6 +204,7 @@ class _ModelTreeWidget(QTreeWidget):
             item.setData(0, Qt.UserRole, key)
             parent.addChild(item)
             self._section_index[key] = item
+            self._section_data[key] = (zone, section)
 
     def section_key(self, item: QTreeWidgetItem | None) -> tuple[str, int] | None:
         if item is None:
@@ -202,6 +228,91 @@ class _ModelTreeWidget(QTreeWidget):
                 self.setCurrentItem(item)
         finally:
             self.blockSignals(False)
+
+    def section_info(self, key: tuple[str, int] | None) -> tuple[Zone, Section] | None:
+        if key is None:
+            return None
+        return self._section_data.get(key)
+
+
+class SectionDetailsWidget(QWidget):
+    """Display basic metadata for the selected section."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QFormLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+
+        self._zone_label = QLabel()
+        self._name_label = QLabel()
+        self._type_label = QLabel()
+        self._cells_label = QLabel()
+        self._points_label = QLabel()
+        self._range_label = QLabel()
+
+        for label in (
+            self._zone_label,
+            self._name_label,
+            self._type_label,
+            self._cells_label,
+            self._points_label,
+            self._range_label,
+        ):
+            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        layout.addRow("Zone", self._zone_label)
+        layout.addRow("Section", self._name_label)
+        layout.addRow("Type", self._type_label)
+        layout.addRow("Cells", self._cells_label)
+        layout.addRow("Points", self._points_label)
+        layout.addRow("Range", self._range_label)
+
+        self.clear()
+
+    def clear(self) -> None:
+        self._set_text("-", "-", "-", "-", "-", "-")
+
+    def update_section(self, zone: Zone, section: Section) -> None:
+        mesh = section.mesh
+        cell_count = mesh.connectivity.shape[0]
+        point_count = mesh.points.shape[0]
+        self._set_text(
+            zone.name,
+            section.name,
+            section.element_type,
+            str(cell_count),
+            str(point_count),
+            f"{section.range[0]} - {section.range[1]}",
+        )
+
+    def _set_text(
+        self,
+        zone: str,
+        name: str,
+        element_type: str,
+        cells: str,
+        points: str,
+        range_: str,
+    ) -> None:
+        self._zone_label.setText(zone)
+        self._name_label.setText(name)
+        self._type_label.setText(element_type)
+        self._cells_label.setText(cells)
+        self._points_label.setText(points)
+        self._range_label.setText(range_)
+
+    def snapshot(self) -> dict[str, str]:
+        """Return the current label texts for tests and debugging."""
+
+        return {
+            "zone": self._zone_label.text(),
+            "name": self._name_label.text(),
+            "type": self._type_label.text(),
+            "cells": self._cells_label.text(),
+            "points": self._points_label.text(),
+            "range": self._range_label.text(),
+        }
 
 
 def main(argv: list[str] | None = None) -> int:

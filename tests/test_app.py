@@ -14,7 +14,7 @@ pytest.importorskip("vtkmodules.qt.QVTKRenderWindowInteractor")
 
 from PySide6.QtWidgets import QMainWindow
 
-from cgns_gui.app import MainWindow, _ModelTreeWidget
+from cgns_gui.app import MainWindow, SectionDetailsWidget, _ModelTreeWidget
 from cgns_gui.model import CgnsModel, MeshData, Section, Zone
 
 
@@ -63,3 +63,37 @@ def test_model_tree_populates_sections(qtbot):
     assert zone_item.childCount() == 1
     section_item = zone_item.child(0)
     assert section_item.text(0) == "Section#1"
+
+    key = tree.section_key(section_item)
+    assert key == ("Zone#1", 1)
+    info = tree.section_info(key)
+    assert info is not None
+    zone_obj, section_obj = info
+    assert zone_obj.name == "Zone#1"
+    assert section_obj is section
+
+
+def test_section_details_widget_updates(qtbot):
+    details = SectionDetailsWidget()
+    qtbot.addWidget(details)
+
+    mesh = MeshData(
+        points=np.zeros((4, 3)),
+        connectivity=np.array([[0, 1, 2]]),
+        cell_type="TRI_3",
+    )
+    section = Section(id=5, name="Wing Surface", element_type="TRI_3", range=(1, 1), mesh=mesh)
+    zone = Zone(name="Wing", sections=[section])
+
+    details.update_section(zone, section)
+    snapshot = details.snapshot()
+    assert snapshot["zone"] == "Wing"
+    assert snapshot["name"] == "Wing Surface"
+    assert snapshot["type"] == "TRI_3"
+    assert snapshot["cells"] == "1"
+    assert snapshot["points"] == "4"
+    assert snapshot["range"] == "1 - 1"
+
+    details.clear()
+    cleared = details.snapshot()
+    assert cleared["name"] == "-"
