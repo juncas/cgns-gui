@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 import numpy as np
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -33,7 +32,7 @@ def test_main_window_class_registered():
 
 @pytest.mark.qt_no_exception_capture
 def test_main_window_initializes(qtbot):
-    """Main window should create a renderer with demo actor."""
+    """Main window should initialise renderer without actors before loading data."""
 
     if _is_headless():
         pytest.skip("Headless environment cannot validate VTK widget")
@@ -41,14 +40,18 @@ def test_main_window_initializes(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.renderer.GetActors().GetNumberOfItems() == 1
+    assert window.renderer.GetActors().GetNumberOfItems() == 0
 
 
 def test_model_tree_populates_sections(qtbot):
     tree = _ModelTreeWidget()
     qtbot.addWidget(tree)
 
-    mesh = MeshData(points=np.zeros((4, 3)), connectivity=np.array([[0, 1, 2, 3]]), cell_type="TETRA_4")
+    mesh = MeshData(
+        points=np.zeros((4, 3)),
+        connectivity=np.array([[0, 1, 2, 3]]),
+        cell_type="TETRA_4",
+    )
     section = Section(id=1, name="Section#1", element_type="TETRA_4", range=(1, 1), mesh=mesh)
     model = CgnsModel(zones=[Zone(name="Zone#1", sections=[section])])
 

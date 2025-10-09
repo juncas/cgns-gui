@@ -49,7 +49,7 @@ pip install -e .[dev]
 
 - 工具栏“打开 CGNS”操作，使用 `CgnsLoader` 加载 HDF5 CGNS 文件。
 - 左侧树状视图展示 Zone / Section 结构及单元数。
-- 右侧 VTK 视口展示演示几何，后续阶段将替换为实际网格渲染。
+- `SceneManager` 将 Section 网格转换为 VTK Actor 并在右侧视口渲染（支持多种常见单元类型）。
 
 开发阶段建议使用以下命令行启动脚本（示例）：
 

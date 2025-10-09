@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
-
 from pathlib import Path
 
+# VTK requires explicit imports for rendering backends
+import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
@@ -20,23 +20,19 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from vtkmodules.vtkFiltersSources import vtkCubeSource
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
-from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper, vtkRenderer
-
-# VTK requires explicit imports for rendering backends
-import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+from vtkmodules.vtkRenderingCore import vtkRenderer
 
 from .loader import CgnsLoader
 from .model import CgnsModel, Zone
+from .scene import SceneManager
 
 
 class MainWindow(QMainWindow):
     """Main window embedding a VTK render view."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:  # noqa: D401
+    def __init__(self, parent: QWidget | None = None) -> None:  # noqa: D401
         super().__init__(parent)
         self.setWindowTitle("CGNS Viewer")
         self.resize(1024, 768)
@@ -66,32 +62,16 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
 
         self.renderer = vtkRenderer()
+        self.scene = SceneManager(self.renderer)
         self._setup_renderer()
         self._create_actions()
 
     def _setup_renderer(self) -> None:
-        """Create demo geometry and configure interaction style."""
+        """Prepare renderer background and attach to the VTK widget."""
 
         render_window = self.vtk_widget.GetRenderWindow()
         render_window.AddRenderer(self.renderer)
-
-        cube_source = vtkCubeSource()
-        cube_source.SetXLength(1.0)
-        cube_source.SetYLength(1.0)
-        cube_source.SetZLength(1.0)
-
-        mapper = vtkPolyDataMapper()
-        mapper.SetInputConnection(cube_source.GetOutputPort())
-
-        actor = vtkActor()
-        actor.SetMapper(mapper)
-        actor.GetProperty().SetColor(0.2, 0.6, 0.9)
-        actor.GetProperty().EdgeVisibilityOn()
-        actor.GetProperty().SetEdgeColor(1.0, 1.0, 1.0)
-
-        self.renderer.AddActor(actor)
         self.renderer.SetBackground(0.1, 0.1, 0.12)
-        self.renderer.ResetCamera()
 
     def start(self) -> None:
         """Initialise the interactor and start rendering."""
@@ -113,6 +93,7 @@ class MainWindow(QMainWindow):
     def load_model(self, model: CgnsModel) -> None:
         self._model = model
         self.tree.populate(model)
+        self.scene.load_model(model)
 
     def _create_actions(self) -> None:
         toolbar = QToolBar("main", self)
@@ -137,7 +118,7 @@ class MainWindow(QMainWindow):
 class _ModelTreeWidget(QTreeWidget):
     """Tree widget to display CGNS zones and sections."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setHeaderLabels(["名称", "类型", "单元数"])
         self.setColumnWidth(0, 200)
@@ -158,7 +139,7 @@ class _ModelTreeWidget(QTreeWidget):
             parent.addChild(item)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """Application entry point."""
 
     argv = list(sys.argv if argv is None else argv)

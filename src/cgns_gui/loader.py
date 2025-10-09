@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import h5py
 import numpy as np
@@ -44,7 +44,10 @@ class CgnsLoader:
     def _read_zone(self, name: str, group: h5py.Group) -> Zone:
         sections = []
         points = self._read_points(group)
-        for section_idx, (section_name, section_group) in enumerate(self._iter_children(group, "Elements_t"), start=1):
+        for section_idx, (section_name, section_group) in enumerate(
+            self._iter_children(group, "Elements_t"),
+            start=1,
+        ):
             mesh = self._read_section_mesh(section_group, points)
             element_type = section_group.get("ElementType")
             if element_type is None:

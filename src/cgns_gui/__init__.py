@@ -2,6 +2,7 @@
 
 from .loader import CgnsLoader
 from .model import CgnsModel, MeshData, Section, Zone
+from .scene import SceneManager
 
 __all__ = [
 	"CgnsLoader",
@@ -9,4 +10,5 @@ __all__ = [
 	"MeshData",
 	"Section",
 	"Zone",
+	"SceneManager",
 ]

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable, List
 
 import numpy as np
 
@@ -44,7 +44,7 @@ class Zone:
     """Zone grouping multiple sections."""
 
     name: str
-    sections: List[Section] = field(default_factory=list)
+    sections: list[Section] = field(default_factory=list)
 
     @property
     def total_cells(self) -> int:
@@ -64,7 +64,7 @@ class Zone:
 class CgnsModel:
     """Root container for a CGNS dataset."""
 
-    zones: List[Zone] = field(default_factory=list)
+    zones: list[Zone] = field(default_factory=list)
 
     def find_section(self, zone_name: str, section_id: int) -> Section | None:
         for zone in self.zones:
