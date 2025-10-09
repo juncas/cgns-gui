@@ -7,6 +7,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+@dataclass(slots=True)
+class BoundaryInfo:
+    """Metadata describing a boundary condition associated with a section."""
+
+    name: str
+    grid_location: str | None = None
+
 
 @dataclass(slots=True)
 class MeshData:
@@ -37,6 +44,7 @@ class Section:
     element_type: str
     range: tuple[int, int]
     mesh: MeshData
+    boundary: BoundaryInfo | None = None
 
 
 @dataclass(slots=True)
@@ -58,6 +66,12 @@ class Zone:
 
     def iter_sections(self) -> Iterable[Section]:
         return iter(self.sections)
+
+    def iter_body_sections(self) -> Iterable[Section]:
+        return (section for section in self.sections if section.boundary is None)
+
+    def iter_boundary_sections(self) -> Iterable[Section]:
+        return (section for section in self.sections if section.boundary is not None)
 
 
 @dataclass(slots=True)

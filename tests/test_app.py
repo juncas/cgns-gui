@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QDialog, QMainWindow, QToolBar
 
 from cgns_gui.app import MainWindow, SectionDetailsWidget, _ModelTreeWidget, _prepare_environment
 from cgns_gui.scene import RenderStyle
-from cgns_gui.model import CgnsModel, MeshData, Section, Zone
+from cgns_gui.model import BoundaryInfo, CgnsModel, MeshData, Section, Zone
 
 
 def _is_headless() -> bool:
@@ -74,6 +74,48 @@ def test_model_tree_populates_sections(qtbot):
     assert section_obj is section
 
 
+def test_model_tree_groups_boundary_sections(qtbot):
+    tree = _ModelTreeWidget()
+    qtbot.addWidget(tree)
+
+    volume_mesh = MeshData(
+        points=np.zeros((4, 3)),
+        connectivity=np.array([[0, 1, 2, 3]]),
+        cell_type="TETRA_4",
+    )
+    surface_mesh = MeshData(
+        points=np.zeros((3, 3)),
+        connectivity=np.array([[0, 1, 2]]),
+        cell_type="TRI_3",
+    )
+    volume = Section(id=1, name="Volume", element_type="TETRA_4", range=(1, 1), mesh=volume_mesh)
+    boundary = Section(
+        id=2,
+        name="Inlet",
+        element_type="TRI_3",
+        range=(1, 1),
+        mesh=surface_mesh,
+        boundary=BoundaryInfo(name="Inlet", grid_location="FaceCenter"),
+    )
+    zone = Zone(name="Zone#1", sections=[volume, boundary])
+
+    tree.populate(CgnsModel(zones=[zone]))
+
+    zone_item = tree.topLevelItem(0)
+    assert zone_item.childCount() == 2
+    volume_item = zone_item.child(0)
+    assert volume_item.text(0) == "Volume"
+    boundary_group = zone_item.child(1)
+    assert boundary_group.text(0) == "Boundary Conditions"
+    assert boundary_group.childCount() == 1
+    boundary_item = boundary_group.child(0)
+    assert boundary_item.text(0) == "Inlet"
+    assert "Boundary" in boundary_item.text(1)
+
+    key = tree.section_key(boundary_item)
+    assert key == ("Zone#1", 2)
+
+
 def test_section_details_widget_updates(qtbot):
     details = SectionDetailsWidget()
     qtbot.addWidget(details)
@@ -100,6 +142,32 @@ def test_section_details_widget_updates(qtbot):
     cleared = details.snapshot()
     assert cleared["name"] == "-"
     assert cleared["transparency"] == "0%"
+
+
+def test_section_details_widget_shows_boundary_info(qtbot):
+    details = SectionDetailsWidget()
+    qtbot.addWidget(details)
+
+    mesh = MeshData(
+        points=np.zeros((3, 3)),
+        connectivity=np.array([[0, 1, 2]]),
+        cell_type="TRI_3",
+    )
+    section = Section(
+        id=7,
+        name="Inlet",
+        element_type="TRI_3",
+        range=(1, 1),
+        mesh=mesh,
+        boundary=BoundaryInfo(name="Inlet", grid_location="FaceCenter"),
+    )
+    zone = Zone(name="Wing", sections=[section])
+
+    details.update_section(zone, section)
+    snapshot = details.snapshot()
+    assert snapshot["name"] == "Inlet"
+    assert "Boundary" in snapshot["type"]
+    assert "FaceCenter" in snapshot["type"]
 
 
 def test_section_details_widget_emits_transparency_signal(qtbot):
@@ -169,6 +237,34 @@ def test_open_settings_updates_preferences(qtbot, monkeypatch):
     assert window._background_name == "Light Gray"
     assert window.scene.get_render_style() is RenderStyle.WIREFRAME
     assert window._wireframe_action is not None and window._wireframe_action.isChecked()
+
+
+@pytest.mark.qt_no_exception_capture
+def test_toggle_section_visibility(qtbot):
+    if _is_headless():
+        pytest.skip("Headless environment cannot validate VTK widget")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    mesh = MeshData(
+        points=np.zeros((4, 3)),
+        connectivity=np.array([[0, 1, 2, 3]]),
+        cell_type="TETRA_4",
+    )
+    section = Section(id=1, name="Vol", element_type="TETRA_4", range=(1, 1), mesh=mesh)
+    model = CgnsModel(zones=[Zone(name="Zone", sections=[section])])
+
+    window.load_model(model)
+    key = ("Zone", 1)
+
+    assert window.scene.is_section_visible(key) is False
+
+    window._set_section_visibility(key, True)
+    assert window.scene.is_section_visible(key) is True
+
+    window._set_section_visibility(key, False)
+    assert window.scene.is_section_visible(key) is False
 
 
 def test_prepare_environment_force_offscreen():

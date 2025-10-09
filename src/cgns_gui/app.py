@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import os
+from functools import partial
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import MutableMapping
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QMainWindow,
     QProgressBar,
@@ -133,6 +135,8 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(8)
 
         self.tree = _ModelTreeWidget(sidebar)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         sidebar_layout.addWidget(self.tree, 1)
 
         self.details = SectionDetailsWidget(sidebar)
@@ -378,6 +382,46 @@ class MainWindow(QMainWindow):
             self.vtk_widget.GetRenderWindow().Render()
 
 
+    def _on_tree_context_menu(self, position) -> None:  # noqa: ANN001
+        item = self.tree.itemAt(position)
+        if item is None or not hasattr(self.tree, "section_key"):
+            return
+        key = self.tree.section_key(item)  # type: ignore[attr-defined]
+        if key is None:
+            return
+
+        menu = QMenu(self.tree)
+        visible = self.scene.is_section_visible(key)
+        if visible:
+            action = menu.addAction(self.tr("Hide Section"))
+            action.triggered.connect(partial(self._set_section_visibility, key, False))
+        else:
+            action = menu.addAction(self.tr("Show Section"))
+            action.triggered.connect(partial(self._set_section_visibility, key, True))
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+
+
+    def _set_section_visibility(self, key: tuple[str, int], visible: bool) -> None:
+        changed = self.scene.set_section_visible(key, visible)
+        if not changed:
+            return
+
+        current_item = self.tree.currentItem()
+        current_key = None
+        if hasattr(self.tree, "section_key"):
+            current_key = self.tree.section_key(current_item)  # type: ignore[attr-defined]
+
+        if current_key == key:
+            if visible:
+                self.scene.highlight(key)
+            else:
+                self.scene.highlight(None)
+            self._on_section_changed(current_key)
+
+        self._selection_controller.sync_scene()
+        self.vtk_widget.GetRenderWindow().Render()
+
+
     def _activate_surface(self) -> None:
         self._set_surface_mode(True)
         if self._surface_action is not None:
@@ -497,13 +541,41 @@ class _ModelTreeWidget(QTreeWidget):
         for zone in model.zones:
             zone_item = QTreeWidgetItem([zone.name, self.tr("Zone"), str(zone.total_cells)])
             self.addTopLevelItem(zone_item)
-            self._add_sections(zone_item, zone)
+            body_sections = list(zone.iter_body_sections())
+            boundary_sections = list(zone.iter_boundary_sections())
+            self._add_sections(zone_item, zone, body_sections, boundary=False)
+            if boundary_sections:
+                boundary_group = QTreeWidgetItem([self.tr("Boundary Conditions"), "", ""])
+                boundary_group.setFlags(boundary_group.flags() & ~Qt.ItemIsSelectable)
+                zone_item.addChild(boundary_group)
+                self._add_sections(boundary_group, zone, boundary_sections, boundary=True)
         self.expandAll()
 
-    def _add_sections(self, parent: QTreeWidgetItem, zone: Zone) -> None:
-        for section in zone.iter_sections():
+    def _add_sections(
+        self,
+        parent: QTreeWidgetItem,
+        zone: Zone,
+        sections: list[Section],
+        *,
+        boundary: bool,
+    ) -> None:
+        for section in sections:
+            display_name = section.name
+            type_label = section.element_type
+            if boundary and section.boundary is not None:
+                display_name = section.boundary.name or section.name
+                location = section.boundary.grid_location
+                if location:
+                    type_label = self.tr("Boundary ({element}, {location})").format(
+                        element=section.element_type,
+                        location=location,
+                    )
+                else:
+                    type_label = self.tr("Boundary ({element})").format(
+                        element=section.element_type,
+                    )
             cells = str(section.mesh.connectivity.shape[0])
-            item = QTreeWidgetItem([section.name, section.element_type, cells])
+            item = QTreeWidgetItem([display_name, type_label, cells])
             key = (zone.name, section.id)
             item.setData(0, Qt.UserRole, key)
             parent.addChild(item)
@@ -610,10 +682,23 @@ class SectionDetailsWidget(QWidget):
         mesh = section.mesh
         cell_count = mesh.connectivity.shape[0]
         point_count = mesh.points.shape[0]
+        display_name = section.name
+        type_label = section.element_type
+        if section.boundary is not None:
+            display_name = section.boundary.name or section.name
+            if section.boundary.grid_location:
+                type_label = self.tr("Boundary ({element}, {location})").format(
+                    element=section.element_type,
+                    location=section.boundary.grid_location,
+                )
+            else:
+                type_label = self.tr("Boundary ({element})").format(
+                    element=section.element_type,
+                )
         self._set_text(
             zone.name,
-            section.name,
-            section.element_type,
+            display_name,
+            type_label,
             str(cell_count),
             str(point_count),
             f"{section.range[0]} - {section.range[1]}",

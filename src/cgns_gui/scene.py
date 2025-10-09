@@ -49,6 +49,7 @@ class SceneManager:
         self._actor_lookup: dict[vtkActor, tuple[str, int]] = {}
         self._base_colors: dict[tuple[str, int], tuple[float, float, float]] = {}
         self._section_transparency: dict[tuple[str, int], float] = {}
+        self._section_visibility: dict[tuple[str, int], bool] = {}
         self._highlighted: tuple[str, int] | None = None
         self._color_palette = self._build_palette()
         self._style = RenderStyle.SURFACE
@@ -60,6 +61,7 @@ class SceneManager:
         self._actor_lookup.clear()
         self._base_colors.clear()
         self._section_transparency.clear()
+        self._section_visibility.clear()
         self._highlighted = None
 
     @property
@@ -79,10 +81,14 @@ class SceneManager:
                 self._renderer.AddActor(actor)
                 key = (zone.name, section.id)
                 transparency = self._default_transparency(section.element_type)
+                visible = self._default_visibility(section.element_type)
                 self._actors[key] = actor
                 self._actor_lookup[actor] = key
                 self._base_colors[key] = color
                 self._section_transparency[key] = transparency
+                self._section_visibility[key] = visible
+                actor.SetVisibility(1 if visible else 0)
+                actor.SetPickable(1 if visible else 0)
                 self._apply_base_style(key, actor, color)
         if self._actors:
             self._renderer.ResetCamera()
@@ -92,6 +98,9 @@ class SceneManager:
 
     def iter_actors(self) -> Iterable[vtkActor]:
         return self._actors.values()
+
+    def iter_actor_items(self) -> Iterable[tuple[tuple[str, int], vtkActor]]:
+        return self._actors.items()
 
     def get_actor(self, key: tuple[str, int]) -> vtkActor | None:
         return self._actors.get(key)
@@ -154,6 +163,9 @@ class SceneManager:
         if key is not None and key not in self._actors:
             key = None
 
+        if key is not None and not self.is_section_visible(key):
+            key = None
+
         if key == self._highlighted and key is not None:
             return
 
@@ -214,6 +226,29 @@ class SceneManager:
     def get_section_transparency(self, key: tuple[str, int]) -> float | None:
         return self._section_transparency.get(key)
 
+    def set_section_visible(self, key: tuple[str, int], visible: bool) -> bool:
+        if key not in self._actors:
+            return False
+        actor = self._actors[key]
+        current = self._section_visibility.get(key, True)
+        if current == visible:
+            return False
+        self._section_visibility[key] = visible
+        actor.SetVisibility(1 if visible else 0)
+        actor.SetPickable(1 if visible else 0)
+        base_color = self._base_colors.get(key)
+        if not visible and self._highlighted == key:
+            self._highlighted = None
+        if visible:
+            if self._highlighted == key:
+                self._apply_highlight(key, actor, base_color)
+            else:
+                self._apply_base_style(key, actor, base_color)
+        return True
+
+    def is_section_visible(self, key: tuple[str, int]) -> bool:
+        return self._section_visibility.get(key, True)
+
     def _opacity_for_key(self, key: tuple[str, int]) -> float:
         transparency = self._section_transparency.get(key, 0.0)
         return max(0.0, min(1.0, 1.0 - transparency))
@@ -231,11 +266,21 @@ class SceneManager:
             "QUAD_4",
         }
         if element_type in volume_types:
-            return 1.0
+            return 0.0
         if element_type in surface_types:
             return 0.0
         # Treat lines and unknown types as opaque by default
         return 0.0
+
+    @staticmethod
+    def _default_visibility(element_type: str) -> bool:
+        volume_types = {
+            "TETRA_4",
+            "PYRA_5",
+            "PENTA_6",
+            "HEXA_8",
+        }
+        return element_type not in volume_types
 
     @staticmethod
     def _build_palette():

@@ -43,8 +43,9 @@ class SelectionController(QObject):
         """Refresh pick list after actors change."""
 
         self._picker.InitializePickList()
-        for actor in self._scene.iter_actors():
-            self._picker.AddPickList(actor)
+        for key, actor in self._scene.iter_actor_items():
+            if self._scene.is_section_visible(key):
+                self._picker.AddPickList(actor)
 
     def clear(self) -> None:
         """Clear current selection state."""
@@ -68,7 +69,8 @@ class SelectionController(QObject):
 
         self._updating = True
         try:
-            self._scene.highlight(key)
+            highlight_key = key if key is None else (key if self._scene.is_section_visible(key) else None)
+            self._scene.highlight(highlight_key)
             self.sectionChanged.emit(key)
         finally:
             self._updating = False
@@ -78,6 +80,8 @@ class SelectionController(QObject):
         self._picker.Pick(click_pos[0], click_pos[1], 0, self._scene.renderer)
         actor: vtkActor | None = self._picker.GetActor()
         key = self._scene.get_key_for_actor(actor)
+        if key is not None and not self._scene.is_section_visible(key):
+            key = None
 
         self._updating = True
         try:

@@ -39,7 +39,7 @@ def test_scene_manager_creates_actor():
     assert renderer.GetActors().GetNumberOfItems() == 1
 
 
-def test_scene_manager_applies_default_transparency():
+def test_scene_manager_default_visibility():
     renderer = vtkRenderer()
     scene = SceneManager(renderer)
 
@@ -77,7 +77,10 @@ def test_scene_manager_applies_default_transparency():
 
     assert volume_actor is not None
     assert surface_actor is not None
-    assert volume_actor.GetProperty().GetOpacity() == pytest.approx(0.0)
+    assert scene.is_section_visible(("Zone", 1)) is False
+    assert scene.is_section_visible(("Zone", 2)) is True
+    assert volume_actor.GetVisibility() == 0
+    assert surface_actor.GetVisibility() == 1
     assert surface_actor.GetProperty().GetOpacity() == pytest.approx(1.0)
 
 
@@ -118,6 +121,8 @@ def test_scene_manager_highlight_cycle():
     actor = scene.get_actor(key)
     assert actor is not None
 
+    scene.set_section_visible(key, True)
+
     scene.highlight(key)
     highlight_color = actor.GetProperty().GetColor()
     assert highlight_color == pytest.approx((0.45, 0.85, 1.0))
@@ -139,9 +144,33 @@ def test_scene_manager_allows_transparency_updates():
     actor = scene.get_actor(key)
     assert actor is not None
 
+    scene.set_section_visible(key, True)
     scene.set_section_transparency(key, 0.3)
     assert scene.get_section_transparency(key) == pytest.approx(0.3)
     assert actor.GetProperty().GetOpacity() == pytest.approx(0.7)
+
+
+def test_scene_manager_toggle_visibility():
+    renderer = vtkRenderer()
+    scene = SceneManager(renderer)
+
+    scene.load_model(_sample_model())
+
+    key = ("Zone", 1)
+    actor = scene.get_actor(key)
+    assert actor is not None
+
+    changed = scene.set_section_visible(key, True)
+    assert changed is True
+    assert scene.is_section_visible(key) is True
+    assert actor.GetVisibility() == 1
+
+    scene.highlight(key)
+    changed = scene.set_section_visible(key, False)
+    assert changed is True
+    assert scene.is_section_visible(key) is False
+    assert actor.GetVisibility() == 0
+    assert scene.get_key_for_actor(actor) == key
 
 
 def test_scene_manager_key_lookup():
