@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from enum import Enum
 
 from vtkmodules.util.numpy_support import numpy_to_vtk
 from vtkmodules.vtkCommonCore import vtkIdList, vtkPoints
@@ -31,18 +32,37 @@ _ELEMENT_TYPE_TO_VTK = {
     "HEXA_8": VTK_HEXAHEDRON,
 }
 
+
+class RenderStyle(str, Enum):
+    """Rendering modes supported by the scene manager."""
+
+    SURFACE = "surface"
+    WIREFRAME = "wireframe"
+
+
 class SceneManager:
     """Manage VTK actors corresponding to CGNS sections."""
 
     def __init__(self, renderer: vtkRenderer) -> None:
         self._renderer = renderer
         self._actors: dict[tuple[str, int], vtkActor] = {}
+        self._actor_lookup: dict[vtkActor, tuple[str, int]] = {}
+        self._base_colors: dict[tuple[str, int], tuple[float, float, float]] = {}
+        self._highlighted: tuple[str, int] | None = None
         self._color_palette = self._build_palette()
+        self._style = RenderStyle.SURFACE
 
     def clear(self) -> None:
         for actor in self._actors.values():
             self._renderer.RemoveActor(actor)
         self._actors.clear()
+        self._actor_lookup.clear()
+        self._base_colors.clear()
+        self._highlighted = None
+
+    @property
+    def renderer(self) -> vtkRenderer:
+        return self._renderer
 
     def load_model(self, model: CgnsModel) -> None:
         self.clear()
@@ -53,13 +73,28 @@ class SceneManager:
                 actor.GetProperty().SetColor(*color)
                 actor.GetProperty().EdgeVisibilityOn()
                 actor.GetProperty().SetEdgeColor(0.15, 0.15, 0.15)
+                self._apply_style(actor)
                 self._renderer.AddActor(actor)
-                self._actors[(zone.name, section.id)] = actor
+                key = (zone.name, section.id)
+                self._actors[key] = actor
+                self._actor_lookup[actor] = key
+                self._base_colors[key] = color
         if self._actors:
             self._renderer.ResetCamera()
 
     def iter_section_keys(self) -> Iterable[tuple[str, int]]:
         return self._actors.keys()
+
+    def iter_actors(self) -> Iterable[vtkActor]:
+        return self._actors.values()
+
+    def get_actor(self, key: tuple[str, int]) -> vtkActor | None:
+        return self._actors.get(key)
+
+    def get_key_for_actor(self, actor: vtkActor | None) -> tuple[str, int] | None:
+        if actor is None:
+            return None
+        return self._actor_lookup.get(actor)
 
     def _create_actor(self, section: Section) -> vtkActor:
         mesh = section.mesh
@@ -98,6 +133,64 @@ class SceneManager:
         palette = self._color_palette
         base_index = (zone_idx * len(palette) + section_idx) % len(palette)
         return palette[base_index]
+
+    def set_render_style(self, style: RenderStyle) -> None:
+        if style == self._style:
+            return
+
+        self._style = style
+        for actor in self._actors.values():
+            self._apply_style(actor)
+
+    def get_render_style(self) -> RenderStyle:
+        return self._style
+
+    def highlight(self, key: tuple[str, int] | None) -> None:
+        if key is not None and key not in self._actors:
+            key = None
+
+        if key == self._highlighted and key is not None:
+            return
+
+        self._highlighted = key
+        for section_key, actor in self._actors.items():
+            base_color = self._base_colors.get(section_key)
+            if section_key == key:
+                self._apply_highlight(actor, base_color)
+            else:
+                self._apply_base_style(actor, base_color)
+
+    def _apply_style(self, actor: vtkActor) -> None:
+        prop = actor.GetProperty()
+        if self._style is RenderStyle.WIREFRAME:
+            prop.SetRepresentationToWireframe()
+        else:
+            prop.SetRepresentationToSurface()
+
+    def _apply_highlight(
+        self,
+        actor: vtkActor,
+        base_color: tuple[float, float, float] | None,
+    ) -> None:
+        prop = actor.GetProperty()
+        color = base_color or prop.GetColor()
+        highlight = tuple(min(component + 0.25, 1.0) for component in color)
+        prop.SetColor(*highlight)
+        prop.SetLineWidth(2.0)
+        prop.EdgeVisibilityOn()
+        prop.SetOpacity(1.0)
+
+    def _apply_base_style(
+        self,
+        actor: vtkActor,
+        base_color: tuple[float, float, float] | None,
+    ) -> None:
+        prop = actor.GetProperty()
+        if base_color is not None:
+            prop.SetColor(*base_color)
+        prop.SetLineWidth(1.0)
+        prop.EdgeVisibilityOn()
+        prop.SetOpacity(1.0)
 
     @staticmethod
     def _build_palette():

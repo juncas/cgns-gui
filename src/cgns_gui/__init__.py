@@ -2,7 +2,8 @@
 
 from .loader import CgnsLoader
 from .model import CgnsModel, MeshData, Section, Zone
-from .scene import SceneManager
+from .scene import RenderStyle, SceneManager
+from .selection import SelectionController
 
 __all__ = [
 	"CgnsLoader",
@@ -10,5 +11,7 @@ __all__ = [
 	"MeshData",
 	"Section",
 	"Zone",
+	"RenderStyle",
+	"SelectionController",
 	"SceneManager",
 ]

@@ -7,8 +7,8 @@ from pathlib import Path
 
 # VTK requires explicit imports for rendering backends
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -26,7 +26,8 @@ from vtkmodules.vtkRenderingCore import vtkRenderer
 
 from .loader import CgnsLoader
 from .model import CgnsModel, Zone
-from .scene import SceneManager
+from .scene import RenderStyle, SceneManager
+from .selection import SelectionController
 
 
 class MainWindow(QMainWindow):
@@ -63,8 +64,17 @@ class MainWindow(QMainWindow):
 
         self.renderer = vtkRenderer()
         self.scene = SceneManager(self.renderer)
+        self._render_group: QActionGroup | None = None
+        self._surface_action: QAction | None = None
+        self._wireframe_action: QAction | None = None
         self._setup_renderer()
         self._create_actions()
+        self._selection_controller = SelectionController(
+            self.scene,
+            self.tree,
+            self.vtk_widget,
+            self,
+        )
 
     def _setup_renderer(self) -> None:
         """Prepare renderer background and attach to the VTK widget."""
@@ -94,6 +104,8 @@ class MainWindow(QMainWindow):
         self._model = model
         self.tree.populate(model)
         self.scene.load_model(model)
+        self._selection_controller.sync_scene()
+        self._selection_controller.clear()
 
     def _create_actions(self) -> None:
         toolbar = QToolBar("main", self)
@@ -103,6 +115,24 @@ class MainWindow(QMainWindow):
         open_action = QAction("打开 CGNS", self)
         open_action.triggered.connect(self._open_dialog)
         toolbar.addAction(open_action)
+
+        toolbar.addSeparator()
+
+        self._render_group = QActionGroup(self)
+        self._render_group.setExclusive(True)
+
+        self._surface_action = QAction("表面", self)
+        self._surface_action.setCheckable(True)
+        self._surface_action.setChecked(True)
+        self._surface_action.triggered.connect(self._set_surface_mode)
+        self._render_group.addAction(self._surface_action)
+        toolbar.addAction(self._surface_action)
+
+        self._wireframe_action = QAction("线框", self)
+        self._wireframe_action.setCheckable(True)
+        self._wireframe_action.triggered.connect(self._set_wireframe_mode)
+        self._render_group.addAction(self._wireframe_action)
+        toolbar.addAction(self._wireframe_action)
 
     def _open_dialog(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -114,6 +144,14 @@ class MainWindow(QMainWindow):
         if file_path:
             self.load_file(file_path)
 
+    def _set_surface_mode(self, checked: bool) -> None:
+        if checked:
+            self.scene.set_render_style(RenderStyle.SURFACE)
+
+    def _set_wireframe_mode(self, checked: bool) -> None:
+        if checked:
+            self.scene.set_render_style(RenderStyle.WIREFRAME)
+
 
 class _ModelTreeWidget(QTreeWidget):
     """Tree widget to display CGNS zones and sections."""
@@ -122,9 +160,11 @@ class _ModelTreeWidget(QTreeWidget):
         super().__init__(parent)
         self.setHeaderLabels(["名称", "类型", "单元数"])
         self.setColumnWidth(0, 200)
+        self._section_index: dict[tuple[str, int], QTreeWidgetItem] = {}
 
     def populate(self, model: CgnsModel) -> None:
         self.clear()
+        self._section_index.clear()
         for zone in model.zones:
             zone_item = QTreeWidgetItem([zone.name, "Zone", str(zone.total_cells)])
             self.addTopLevelItem(zone_item)
@@ -135,8 +175,33 @@ class _ModelTreeWidget(QTreeWidget):
         for section in zone.iter_sections():
             cells = str(section.mesh.connectivity.shape[0])
             item = QTreeWidgetItem([section.name, section.element_type, cells])
-            item.setData(0, Qt.UserRole, section.id)
+            key = (zone.name, section.id)
+            item.setData(0, Qt.UserRole, key)
             parent.addChild(item)
+            self._section_index[key] = item
+
+    def section_key(self, item: QTreeWidgetItem | None) -> tuple[str, int] | None:
+        if item is None:
+            return None
+        data = item.data(0, Qt.UserRole)
+        if isinstance(data, tuple) and len(data) == 2:
+            return data  # type: ignore[return-value]
+        return None
+
+    def select_section(self, key: tuple[str, int] | None) -> None:
+        try:
+            self.blockSignals(True)
+            if key is None:
+                selection_model = self.selectionModel()
+                if selection_model is not None:
+                    selection_model.clearSelection()
+                self.setCurrentIndex(QModelIndex())
+                return
+            item = self._section_index.get(key)
+            if item is not None:
+                self.setCurrentItem(item)
+        finally:
+            self.blockSignals(False)
 
 
 def main(argv: list[str] | None = None) -> int:
