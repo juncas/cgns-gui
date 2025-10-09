@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 pytest.importorskip("vtkmodules.qt.QVTKRenderWindowInteractor")
 
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtWidgets import QMainWindow, QToolBar
 
 from cgns_gui.app import MainWindow, SectionDetailsWidget, _ModelTreeWidget
 from cgns_gui.model import CgnsModel, MeshData, Section, Zone
@@ -97,3 +97,22 @@ def test_section_details_widget_updates(qtbot):
     details.clear()
     cleared = details.snapshot()
     assert cleared["name"] == "-"
+
+
+@pytest.mark.qt_no_exception_capture
+def test_main_window_toolbar_camera_actions(qtbot):
+    if _is_headless():
+        pytest.skip("Headless environment cannot validate VTK widget")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    toolbars = window.findChildren(QToolBar)
+    assert toolbars, "Main toolbar should be present"
+    actions = {action.text(): action for action in toolbars[0].actions()}
+
+    assert "重置视角" in actions
+    assert "显示坐标轴" in actions
+
+    actions["显示坐标轴"].trigger()
+    actions["显示坐标轴"].trigger()

@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
 )
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
+from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
+from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkRenderingCore import vtkRenderer
 
 from .loader import CgnsLoader
@@ -79,6 +81,9 @@ class MainWindow(QMainWindow):
         self._render_group: QActionGroup | None = None
         self._surface_action: QAction | None = None
         self._wireframe_action: QAction | None = None
+        self._orientation_widget: vtkOrientationMarkerWidget | None = None
+        self._axes_actor: vtkAxesActor | None = None
+        self._orientation_action: QAction | None = None
         self._setup_renderer()
         self._create_actions()
         self._selection_controller = SelectionController(
@@ -106,6 +111,7 @@ class MainWindow(QMainWindow):
         if interactor is not None:
             interactor_style = vtkInteractorStyleTrackballCamera()
             interactor.SetInteractorStyle(interactor_style)
+            self._ensure_orientation_widget(interactor)
         self.vtk_widget.Start()
 
     def load_file(self, path: str) -> None:
@@ -120,6 +126,7 @@ class MainWindow(QMainWindow):
         self.scene.load_model(model)
         self._selection_controller.sync_scene()
         self._selection_controller.clear()
+        self._reset_camera()
 
     def _on_section_changed(self, key: tuple[str, int] | None) -> None:
         info = self.tree.section_info(key)
@@ -157,6 +164,18 @@ class MainWindow(QMainWindow):
         self._render_group.addAction(self._wireframe_action)
         toolbar.addAction(self._wireframe_action)
 
+        toolbar.addSeparator()
+
+        reset_action = QAction("重置视角", self)
+        reset_action.triggered.connect(self._reset_camera)
+        toolbar.addAction(reset_action)
+
+        self._orientation_action = QAction("显示坐标轴", self)
+        self._orientation_action.setCheckable(True)
+        self._orientation_action.setChecked(True)
+        self._orientation_action.triggered.connect(self._toggle_orientation_marker)
+        toolbar.addAction(self._orientation_action)
+
     def _open_dialog(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -166,6 +185,39 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.load_file(file_path)
+
+    def _reset_camera(self) -> None:
+        self.renderer.ResetCamera()
+        render_window = self.vtk_widget.GetRenderWindow()
+        render_window.Render()
+
+    def _toggle_orientation_marker(self, checked: bool) -> None:
+        if self._orientation_widget is None:
+            interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+            if interactor is not None and checked:
+                self._ensure_orientation_widget(interactor)
+        if self._orientation_widget is not None:
+            self._orientation_widget.SetEnabled(1 if checked else 0)
+            if checked:
+                self._orientation_widget.InteractiveOn()
+
+    def _ensure_orientation_widget(self, interactor) -> None:
+        if self._orientation_widget is not None:
+            self._orientation_widget.SetInteractor(interactor)
+            if self._orientation_action and not self._orientation_action.isChecked():
+                self._orientation_widget.SetEnabled(0)
+            return
+
+        self._axes_actor = vtkAxesActor()
+        widget = vtkOrientationMarkerWidget()
+        widget.SetOrientationMarker(self._axes_actor)
+        widget.SetInteractor(interactor)
+        widget.SetViewport(0.0, 0.0, 0.25, 0.25)
+        widget.SetEnabled(1)
+        widget.InteractiveOn()
+        if self._orientation_action and not self._orientation_action.isChecked():
+            widget.SetEnabled(0)
+        self._orientation_widget = widget
 
     def _set_surface_mode(self, checked: bool) -> None:
         if checked:
