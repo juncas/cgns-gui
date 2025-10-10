@@ -1,0 +1,124 @@
+name: Release Packages
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (e.g. v0.2.0)"
+        required: false
+      publish-release:
+        description: "Publish GitHub Release with build artifacts"
+        type: boolean
+        default: false
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  CGNS_GUI_FORCE_OFFSCREEN: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  XDG_RUNTIME_DIR: /tmp/runtime-cgns
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }} artifacts
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+            label: linux
+          - os: windows-latest
+            python-version: "3.10"
+            label: windows
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1
+
+      - name: Prepare runtime directory
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: Lint with Ruff
+        run: ruff check .
+
+      - name: Run pytest
+        run: pytest
+
+      - name: Build distributables
+        run: python tools/build_package.py
+
+      - name: Smoke test wheel installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheel=$(ls dist/*.whl | head -n1)
+          python -m pip install --force-reinstall --no-deps "$wheel"
+          python -c "import cgns_gui; print('Import OK on', __import__('platform').platform())"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs['publish-release'] == 'true')
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: artifacts
+
+      - name: Determine release tag
+        id: release
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.version }}"
+            if [ -z "$TAG" ]; then
+              echo "::error::Version input is required when publishing from workflow_dispatch." >&2
+              exit 1
+            fi
+          else
+            TAG="${GITHUB_REF##*/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          files: artifacts/**/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

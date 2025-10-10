@@ -71,6 +71,20 @@ pip install --force-reinstall dist\cgns_gui-<version>-py3-none-any.whl
    cgns-gui --offscreen
    ```
 
+## GitHub Actions 发布流程
+
+仓库提供 `Release Packages` 工作流（`.github/workflows/release.yml`），可在 GitHub Actions 页签手动触发或在推送 `v*` 标签时自动执行。流程将：
+
+1. 在 `ubuntu-latest` 与 `windows-latest` 上分别安装依赖、运行 `ruff check .` 与 `pytest`。
+2. 使用 `tools/build_package.py` 构建 sdist 与 wheel，并对 wheel 进行冒烟安装验证。
+3. 将每个平台的 `dist/` 目录上传为构件；若触发条件为标签推送或手动启用了 `publish-release`，还会将产物发布到对应的 GitHub Release。
+
+手动触发发布的示例步骤：
+
+1. 在仓库的 “Actions” -> “Release Packages” 页面点击 “Run workflow”。
+2. 输入版本号（例如 `v0.2.0`），勾选 `publish-release`（如需自动创建 Release）。
+3. 等流程完成后，从 Release 或构件中下载对应平台的包。
+
 ## 发布到 PyPI（可选）
 
 1. 安装 `twine`：`pip install twine`

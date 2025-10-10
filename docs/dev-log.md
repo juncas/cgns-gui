@@ -35,6 +35,7 @@
 - 新增 `SceneManager` 几何边界查询接口，配合自适应交互样式更新焦点；扩充测试覆盖交互控制器与场景边界行为。
 - `_prepare_environment` 增加 OpenGL 驱动检测，若缺失 Mesa/GLX 组件自动退回 `offscreen` 模式并提示安装依赖，避免进程崩溃；README 补充相关说明。
 - 增强窗口模式诊断，启动前检测 Qt xcb 所需动态库，缺失时直接给出安装指引，避免 Qt 异常退出。
+- 新增 `Release Packages` GitHub Actions 工作流，矩阵构建 Linux/Windows 包并在发布标签时自动上传构件，可选推送到 GitHub Release；更新发布指南记录流程。
 - 在无 DISPLAY 或沙箱环境下自动退回离屏模式，避免 GLX 上下文创建失败导致的崩溃，同时允许通过 `CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK=1` 手动禁止。
 
 ## 2025-10-09（续）
