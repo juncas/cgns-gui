@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from collections.abc import MutableMapping
 from ctypes.util import find_library
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-import warnings
 
 # VTK requires explicit imports for rendering backends
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401

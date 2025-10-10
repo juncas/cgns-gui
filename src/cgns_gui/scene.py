@@ -104,7 +104,10 @@ class SceneManager:
                 bounds[5] = max(bounds[5], actor_bounds[5])
         return tuple(bounds) if bounds is not None else None
 
-    def bounds_for_section(self, key: tuple[str, int]) -> tuple[float, float, float, float, float, float] | None:
+    def bounds_for_section(
+        self,
+        key: tuple[str, int],
+    ) -> tuple[float, float, float, float, float, float] | None:
         actor = self._actors.get(key)
         if actor is None or actor.GetVisibility() != 1:
             return None

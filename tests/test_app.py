@@ -17,9 +17,9 @@ from PySide6.QtWidgets import QDialog, QMainWindow, QToolBar
 from cgns_gui.app import (
     MainWindow,
     SectionDetailsWidget,
+    _missing_xcb_libs,
     _ModelTreeWidget,
     _prepare_environment,
-    _missing_xcb_libs,
     _should_force_offscreen,
 )
 from cgns_gui.model import BoundaryInfo, CgnsModel, MeshData, Section, Zone
