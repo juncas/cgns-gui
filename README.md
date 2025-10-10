@@ -15,6 +15,7 @@
 - Python 3.10+
 - 推荐使用虚拟环境（Conda / venv）。
 - 依赖列表详见 `pyproject.toml`。
+- Linux 环境运行带窗口的 GUI 时，请确保安装 Mesa OpenGL 组件（例如 `sudo apt install libgl1-mesa-glx libgl1-mesa-dri`）；若缺失驱动，程序会自动回退至离屏模式并给出警告。
 
 ### 安装步骤
 

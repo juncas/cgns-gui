@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import MutableMapping
+from ctypes.util import find_library
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+import warnings
 
 # VTK requires explicit imports for rendering backends
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
@@ -67,6 +69,43 @@ class ViewerSettings:
     render_style: RenderStyle
 
 
+def _should_force_offscreen(
+    environ: MutableMapping[str, str],
+    *,
+    find_gl=find_library,
+    path_exists=Path.exists,
+) -> bool:
+    if environ.get("CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK") == "1":
+        return False
+    if find_gl("GL") is None:
+        return True
+
+    drivers_env = environ.get("LIBGL_DRIVERS_PATH")
+    search_dirs: list[str] = []
+    if drivers_env:
+        search_dirs.extend(path for path in drivers_env.split(os.pathsep) if path)
+    search_dirs.extend(
+        [
+            "/usr/lib/x86_64-linux-gnu/dri",
+            "/usr/lib64/dri",
+            "/usr/lib/dri",
+        ]
+    )
+
+    for directory in search_dirs:
+        path = Path(directory)
+        try:
+            if not path_exists(path):
+                continue
+            for entry in path.iterdir():
+                if entry.suffix == ".so" and entry.name.endswith("_dri.so"):
+                    return False
+        except OSError:
+            continue
+
+    return True
+
+
 def _prepare_environment(
     force_offscreen: bool,
     environ: MutableMapping[str, str] | None = None,
@@ -81,6 +120,15 @@ def _prepare_environment(
     wayland = environ.get("WAYLAND_DISPLAY")
 
     if environ.get("CGNS_GUI_FORCE_OFFSCREEN") == "1":
+        force_offscreen = True
+
+    if not force_offscreen and _should_force_offscreen(environ):
+        warnings.warn(
+            "OpenGL drivers not detected; falling back to offscreen rendering. "
+            "Install libgl1-mesa-dri or set CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK=1 to bypass.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         force_offscreen = True
 
     if force_offscreen or (platform is None and not display and not wayland):

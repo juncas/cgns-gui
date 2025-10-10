@@ -14,7 +14,13 @@ pytest.importorskip("vtkmodules.qt.QVTKRenderWindowInteractor")
 
 from PySide6.QtWidgets import QDialog, QMainWindow, QToolBar
 
-from cgns_gui.app import MainWindow, SectionDetailsWidget, _ModelTreeWidget, _prepare_environment
+from cgns_gui.app import (
+    MainWindow,
+    SectionDetailsWidget,
+    _ModelTreeWidget,
+    _prepare_environment,
+    _should_force_offscreen,
+)
 from cgns_gui.model import BoundaryInfo, CgnsModel, MeshData, Section, Zone
 from cgns_gui.scene import RenderStyle
 
@@ -23,6 +29,20 @@ def _is_headless() -> bool:
     platform = os.environ.get("QT_QPA_PLATFORM", "")
     display = os.environ.get("DISPLAY")
     return platform == "offscreen" or not display
+
+
+def test_should_force_offscreen_without_gl():
+    env: dict[str, str] = {}
+    assert _should_force_offscreen(env, find_gl=lambda name: None, path_exists=lambda path: False)
+
+
+def test_should_force_offscreen_when_driver_available(tmp_path):
+    driver_dir = tmp_path / "dri"
+    driver_dir.mkdir()
+    (driver_dir / "mock_dri.so").write_text("")
+
+    env: dict[str, str] = {"LIBGL_DRIVERS_PATH": str(driver_dir)}
+    assert _should_force_offscreen(env, find_gl=lambda name: "libGL.so.1") is False
 
 
 def test_main_window_class_registered():

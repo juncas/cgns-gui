@@ -33,6 +33,7 @@
 - 扩充 `docs/release-guide.md`，增加 PowerShell 环境下运行打包脚本与 wheel 冒烟测试的注意事项。
 - 自定义 VTK 交互样式，依据可见几何自动调整平移速度与旋转重心；在 `MainWindow` 中接入并同步场景显隐状态。
 - 新增 `SceneManager` 几何边界查询接口，配合自适应交互样式更新焦点；扩充测试覆盖交互控制器与场景边界行为。
+- `_prepare_environment` 增加 OpenGL 驱动检测，若缺失 Mesa/GLX 组件自动退回 `offscreen` 模式并提示安装依赖，避免进程崩溃；README 补充相关说明。
 
 ## 2025-10-09（续）
 
