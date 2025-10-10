@@ -118,6 +118,17 @@ jobs:
           pattern: dist-*
           path: artifacts
 
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp artifacts/dist-linux/*.whl release/
+          cp artifacts/dist-linux/*.tar.gz release/
+          if compgen -G "artifacts/dist-windows/*.zip" > /dev/null; then
+            cp artifacts/dist-windows/*.zip release/
+          fi
+
       - name: Determine release tag
         id: release
         shell: bash
@@ -137,8 +148,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.release.outputs.tag }}
-          files: |
-            artifacts/**/*.whl
-            artifacts/**/*.zip
+          files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
