@@ -20,6 +20,9 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   XDG_RUNTIME_DIR: /tmp/runtime-cgns
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build ${{ matrix.label }} artifacts
