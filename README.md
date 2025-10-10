@@ -15,7 +15,13 @@
 - Python 3.10+
 - 推荐使用虚拟环境（Conda / venv）。
 - 依赖列表详见 `pyproject.toml`。
-- Linux 环境运行带窗口的 GUI 时，请确保安装 Mesa OpenGL 组件（例如 `sudo apt install libgl1-mesa-glx libgl1-mesa-dri`）；若缺失驱动，程序会自动回退至离屏模式并给出警告。
+- Linux 环境运行带窗口的 GUI 时，请确保安装 Mesa OpenGL 组件与 Qt xcb 依赖，例如：
+	```bash
+	sudo apt install libgl1-mesa-glx libgl1-mesa-dri libxcb-cursor0 \
+			 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xfixes0 libxcb-xinerama0
+	```
+	  缺失这些库时程序会给出明确提示；如需强行跳过检查，可设置 `CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK=1`。
+	  在纯终端或无 `DISPLAY` 环境下程序会自动退回离屏模式，可结合 `--offscreen` 参数执行。
 
 ### 安装步骤
 

@@ -74,9 +74,15 @@ def _should_force_offscreen(
     *,
     find_gl=find_library,
     path_exists=Path.exists,
+    is_headless: bool | None = None,
 ) -> bool:
+    if is_headless is None:
+        display = environ.get("DISPLAY")
+        is_headless = not bool(display)
     if environ.get("CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK") == "1":
         return False
+    if is_headless:
+        return True
     if find_gl("GL") is None:
         return True
 
@@ -104,6 +110,30 @@ def _should_force_offscreen(
             continue
 
     return True
+
+
+_REQUIRED_XCB_LIBS = (
+    "xcb-cursor",
+    "xcb-icccm",
+    "xcb-keysyms",
+    "xcb-shape",
+    "xcb-xfixes",
+    "xcb-xinerama",
+    "xkbcommon-x11",
+)
+
+
+def _missing_xcb_libs(
+    find_lib=find_library,
+) -> list[str]:
+    missing: list[str] = []
+    for name in _REQUIRED_XCB_LIBS:
+        try:
+            if find_lib(name) is None:
+                missing.append(name)
+        except OSError:
+            missing.append(name)
+    return missing
 
 
 def _prepare_environment(
@@ -137,6 +167,18 @@ def _prepare_environment(
 
     if platform == "offscreen":
         environ.setdefault("VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN", "1")
+        return
+
+    if platform in {None, "", "xcb"}:
+        missing = _missing_xcb_libs()
+        if missing:
+            message = (
+                "Qt xcb platform dependencies missing: "
+                + ", ".join(missing)
+                + ". Install packages such as libxcb-cursor0, libxkbcommon-x11-0, "
+                  "libxcb-icccm4, libxcb-keysyms1, libxcb-xfixes0, libxcb-xinerama0."
+            )
+            raise RuntimeError(message)
 
 
 def _configure_application_font(app: QApplication) -> None:

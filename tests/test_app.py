@@ -19,6 +19,7 @@ from cgns_gui.app import (
     SectionDetailsWidget,
     _ModelTreeWidget,
     _prepare_environment,
+    _missing_xcb_libs,
     _should_force_offscreen,
 )
 from cgns_gui.model import BoundaryInfo, CgnsModel, MeshData, Section, Zone
@@ -41,8 +42,27 @@ def test_should_force_offscreen_when_driver_available(tmp_path):
     driver_dir.mkdir()
     (driver_dir / "mock_dri.so").write_text("")
 
-    env: dict[str, str] = {"LIBGL_DRIVERS_PATH": str(driver_dir)}
+    env: dict[str, str] = {"LIBGL_DRIVERS_PATH": str(driver_dir), "DISPLAY": ":0"}
     assert _should_force_offscreen(env, find_gl=lambda name: "libGL.so.1") is False
+
+
+def test_should_force_offscreen_when_headless(tmp_path):
+    driver_dir = tmp_path / "dri"
+    driver_dir.mkdir()
+    (driver_dir / "mock_dri.so").write_text("")
+
+    env: dict[str, str] = {"LIBGL_DRIVERS_PATH": str(driver_dir)}
+    assert _should_force_offscreen(
+        env,
+        find_gl=lambda name: "libGL.so.1",
+        is_headless=True,
+    )
+
+
+def test_missing_xcb_libs_reports_required_names(monkeypatch):
+    monkeypatch.setattr("ctypes.util.find_library", lambda name: None)
+    missing = _missing_xcb_libs(find_lib=lambda name: None)
+    assert missing
 
 
 def test_main_window_class_registered():
