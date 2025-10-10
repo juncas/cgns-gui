@@ -42,6 +42,12 @@ from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkRenderingCore import vtkRenderer
 
+if __package__ in {None, ""}:
+    package_root = Path(__file__).resolve().parent.parent
+    package_path = str(package_root)
+    if package_path not in sys.path:
+        sys.path.insert(0, package_path)
+
 from .i18n import install_translators
 from .interaction import AdaptiveTrackballCameraStyle, InteractionController
 from .loader import CgnsLoader
