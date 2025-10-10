@@ -31,6 +31,8 @@
 - 新增 `docs/windows-setup.md`，梳理 Windows 平台依赖、环境搭建与常见问题；同步 README 文档索引。
 - 更新 CI 流水线，加入 `windows-latest` 作业运行 lint、pytest 与 `python tools/build_package.py`，并验证 wheel 安装导入，支撑 M7 的跨平台验证。
 - 扩充 `docs/release-guide.md`，增加 PowerShell 环境下运行打包脚本与 wheel 冒烟测试的注意事项。
+- 自定义 VTK 交互样式，依据可见几何自动调整平移速度与旋转重心；在 `MainWindow` 中接入并同步场景显隐状态。
+- 新增 `SceneManager` 几何边界查询接口，配合自适应交互样式更新焦点；扩充测试覆盖交互控制器与场景边界行为。
 
 ## 2025-10-09（续）
 

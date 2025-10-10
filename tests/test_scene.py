@@ -15,7 +15,14 @@ from cgns_gui.scene import RenderStyle, SceneManager
 
 def _sample_model() -> CgnsModel:
     mesh = MeshData(
-        points=np.zeros((4, 3)),
+        points=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        ),
         connectivity=np.array([[0, 1, 2, 3]]),
         cell_type="TETRA_4",
     )
@@ -195,3 +202,41 @@ def test_scene_manager_clears_previous_actors():
     scene.load_model(CgnsModel(zones=[]))
 
     assert renderer.GetActors().GetNumberOfItems() == 0
+
+
+def test_scene_manager_bounds_respect_visibility():
+    renderer = vtkRenderer()
+    scene = SceneManager(renderer)
+
+    surface_mesh = MeshData(
+        points=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0],
+            ]
+        ),
+        connectivity=np.array([[0, 1, 2]]),
+        cell_type="TRI_3",
+    )
+    section = Section(
+        id=10,
+        name="Surface",
+        element_type="TRI_3",
+        range=(1, 1),
+        mesh=surface_mesh,
+    )
+    zone = Zone(name="Zone", sections=[section])
+
+    scene.load_model(CgnsModel(zones=[zone]))
+    key = ("Zone", 10)
+    scene.set_section_visible(key, True)
+
+    visible_bounds = scene.visible_bounds()
+    assert visible_bounds is not None
+    scene_bounds = scene.scene_bounds()
+    assert scene_bounds == visible_bounds
+
+    scene.set_section_visible(key, False)
+    assert scene.visible_bounds() is None
+    assert scene.scene_bounds() == scene_bounds

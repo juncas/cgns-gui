@@ -68,6 +68,51 @@ class SceneManager:
     def renderer(self) -> vtkRenderer:
         return self._renderer
 
+    def visible_bounds(self) -> tuple[float, float, float, float, float, float] | None:
+        bounds: list[float] | None = None
+        for actor in self._actors.values():
+            if actor.GetVisibility() != 1:
+                continue
+            actor_bounds = actor.GetBounds()
+            if actor_bounds is None or actor_bounds[0] > actor_bounds[1]:
+                continue
+            if bounds is None:
+                bounds = list(actor_bounds)
+            else:
+                bounds[0] = min(bounds[0], actor_bounds[0])
+                bounds[1] = max(bounds[1], actor_bounds[1])
+                bounds[2] = min(bounds[2], actor_bounds[2])
+                bounds[3] = max(bounds[3], actor_bounds[3])
+                bounds[4] = min(bounds[4], actor_bounds[4])
+                bounds[5] = max(bounds[5], actor_bounds[5])
+        return tuple(bounds) if bounds is not None else None
+
+    def scene_bounds(self) -> tuple[float, float, float, float, float, float] | None:
+        bounds: list[float] | None = None
+        for actor in self._actors.values():
+            actor_bounds = actor.GetBounds()
+            if actor_bounds is None or actor_bounds[0] > actor_bounds[1]:
+                continue
+            if bounds is None:
+                bounds = list(actor_bounds)
+            else:
+                bounds[0] = min(bounds[0], actor_bounds[0])
+                bounds[1] = max(bounds[1], actor_bounds[1])
+                bounds[2] = min(bounds[2], actor_bounds[2])
+                bounds[3] = max(bounds[3], actor_bounds[3])
+                bounds[4] = min(bounds[4], actor_bounds[4])
+                bounds[5] = max(bounds[5], actor_bounds[5])
+        return tuple(bounds) if bounds is not None else None
+
+    def bounds_for_section(self, key: tuple[str, int]) -> tuple[float, float, float, float, float, float] | None:
+        actor = self._actors.get(key)
+        if actor is None or actor.GetVisibility() != 1:
+            return None
+        bounds = actor.GetBounds()
+        if bounds is None or bounds[0] > bounds[1]:
+            return None
+        return bounds
+
     def load_model(self, model: CgnsModel) -> None:
         self.clear()
         for zone_idx, zone in enumerate(model.zones):

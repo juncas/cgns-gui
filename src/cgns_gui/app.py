@@ -36,13 +36,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkRenderingCore import vtkRenderer
 
 from .i18n import install_translators
-from .interaction import InteractionController
+from .interaction import AdaptiveTrackballCameraStyle, InteractionController
 from .loader import CgnsLoader
 from .model import CgnsModel, Section, Zone
 from .scene import RenderStyle, SceneManager
@@ -162,6 +161,7 @@ class MainWindow(QMainWindow):
         self._axes_actor: vtkAxesActor | None = None
         self._orientation_action: QAction | None = None
         self._interaction_controller = InteractionController()
+        self._adaptive_style: AdaptiveTrackballCameraStyle | None = None
         self._toolbar: QToolBar | None = None
         self._status_bar: QStatusBar = self.statusBar()
         self._progress = QProgressBar()
@@ -201,11 +201,35 @@ class MainWindow(QMainWindow):
         render_window = self.vtk_widget.GetRenderWindow()
         interactor = render_window.GetInteractor()
         if interactor is not None:
-            interactor_style = vtkInteractorStyleTrackballCamera()
-            interactor.SetInteractorStyle(interactor_style)
+            style = AdaptiveTrackballCameraStyle()
+            style.set_renderer(self.renderer)
+            interactor.SetInteractorStyle(style)
+            self._adaptive_style = style
             self._interaction_controller.attach(interactor)
             self._ensure_orientation_widget(interactor)
         self.vtk_widget.Start()
+
+    def _update_interactor_focus(
+        self,
+        key: tuple[str, int] | None = None,
+        *,
+        force: bool,
+    ) -> None:
+        if self._adaptive_style is None:
+            return
+        bounds = None
+        if key is not None:
+            bounds = self.scene.bounds_for_section(key)
+        if bounds is None:
+            bounds = self.scene.visible_bounds()
+        if bounds is None:
+            bounds = self.scene.scene_bounds()
+        if bounds is None:
+            return
+        if force:
+            self._adaptive_style.focus_on_bounds(bounds)
+        else:
+            self._adaptive_style.set_scene_bounds(bounds)
 
     def load_file(self, path: str) -> None:
         """Load a CGNS file and refresh the UI."""
@@ -235,11 +259,13 @@ class MainWindow(QMainWindow):
         self._selection_controller.sync_scene()
         self._selection_controller.clear()
         self._reset_camera()
+        self._update_interactor_focus(force=True)
 
     def _on_section_changed(self, key: tuple[str, int] | None) -> None:
         info = self.tree.section_info(key)
         if info is None:
             self.details.clear()
+            self._update_interactor_focus(force=False)
             return
 
         zone, section = info
@@ -249,6 +275,7 @@ class MainWindow(QMainWindow):
             if value is not None:
                 transparency = value
         self.details.update_section(zone, section, key=key, transparency=transparency)
+        self._update_interactor_focus(key, force=True)
 
     def _on_section_transparency_changed(self, payload: tuple[tuple[str, int], float]) -> None:
         key, transparency = payload
@@ -336,6 +363,7 @@ class MainWindow(QMainWindow):
         self.renderer.ResetCamera()
         render_window = self.vtk_widget.GetRenderWindow()
         render_window.Render()
+        self._update_interactor_focus(force=False)
 
     def _toggle_orientation_marker(self, checked: bool) -> None:
         if self._orientation_widget is None:
@@ -420,6 +448,7 @@ class MainWindow(QMainWindow):
 
         self._selection_controller.sync_scene()
         self.vtk_widget.GetRenderWindow().Render()
+        self._update_interactor_focus(current_key if visible else None, force=False)
 
 
     def _activate_surface(self) -> None:
