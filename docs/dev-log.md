@@ -26,6 +26,7 @@
 - 扩展 GUI 测试覆盖工具栏视角控制，确保在 headless 环境触发安全。
 - 引入 `InteractionController` 管理键盘快捷键（R/S/W/O），可扩展后续交互事件。
 - 解析 ZoneBC 边界条件并与对应的面单元 Section 关联，树状视图下新增“Boundary Conditions”分组，详情面板展示 GridLocation 信息；补充加载与界面测试验证分组行为。
+- 扩充 `tests/test_loader.py` 验证 FamilyName 缺失时仍可从 Family_t 获取边界名称；新增 GitHub Actions CI（lint + pytest）流水线并在提交前本地验证通过。
 
 ## 2025-10-09（续）
 

@@ -140,6 +140,49 @@ def test_loader_attaches_boundary_conditions(tmp_path: Path) -> None:
     assert inlet.boundary.name == "Pressure Inlet"
     assert inlet.boundary.grid_location == "FaceCenter"
 
+
+def test_loader_boundary_uses_family_group_when_dataset_missing(tmp_path: Path) -> None:
+    file_path = tmp_path / "family_fallback.cgns"
+    with h5py.File(file_path, "w") as handle:
+        base = handle.create_group("Base")
+        base.attrs["label"] = b"Base_t"
+
+        family = base.create_group("FamOutlet")
+        family.attrs["label"] = b"Family_t"
+        family.attrs["name"] = b"Outlet"
+
+        zone = base.create_group("Zone")
+        zone.attrs["label"] = b"Zone_t"
+
+        coords = zone.create_group("GridCoordinates")
+        coords.attrs["label"] = b"GridCoordinates_t"
+        coords.create_dataset("CoordinateX", data=[0.0, 1.0, 0.0])
+        coords.create_dataset("CoordinateY", data=[0.0, 0.0, 1.0])
+        coords.create_dataset("CoordinateZ", data=[0.0, 0.0, 0.0])
+
+        surface = zone.create_group(" Outlet ")
+        surface.attrs["label"] = b"Elements_t"
+        surface.create_dataset("ElementType", data=np.array("TRI_3", dtype="S8"))
+        surface.create_dataset("ElementConnectivity", data=[1, 2, 3])
+
+        zone_bc = zone.create_group("ZoneBC")
+        zone_bc.attrs["label"] = b"ZoneBC_t"
+        outlet_bc = zone_bc.create_group(" Outlet ")
+        outlet_bc.attrs["label"] = b"BC_t"
+        outlet_bc.attrs["name"] = b" Outlet "
+        grid_location = outlet_bc.create_group("GridLocation")
+        grid_location.attrs["label"] = b"GridLocation_t"
+        grid_location.create_dataset(" data", data=np.frombuffer(b"FaceCenter", dtype=np.uint8))
+
+    loader = CgnsLoader()
+
+    model = loader.load(file_path)
+
+    boundary_section = model.zones[0].sections[0]
+    assert boundary_section.boundary is not None
+    assert boundary_section.boundary.name == "Outlet"
+    assert boundary_section.boundary.grid_location == "FaceCenter"
+
 def test_loader_prefers_section_name_when_type_code_incorrect(tmp_path: Path) -> None:
     file_path = tmp_path / "wrong_code.cgns"
     with h5py.File(file_path, "w") as handle:
