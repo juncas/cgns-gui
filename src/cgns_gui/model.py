@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+
 @dataclass(slots=True)
 class BoundaryInfo:
     """Metadata describing a boundary condition associated with a section."""

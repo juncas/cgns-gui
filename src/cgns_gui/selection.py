@@ -69,7 +69,12 @@ class SelectionController(QObject):
 
         self._updating = True
         try:
-            highlight_key = key if key is None else (key if self._scene.is_section_visible(key) else None)
+            if key is None:
+                highlight_key = None
+            elif self._scene.is_section_visible(key):
+                highlight_key = key
+            else:
+                highlight_key = None
             self._scene.highlight(highlight_key)
             self.sectionChanged.emit(key)
         finally:

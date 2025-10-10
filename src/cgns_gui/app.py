@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 import os
-from functools import partial
-from dataclasses import dataclass
-from pathlib import Path
+import sys
 from collections.abc import MutableMapping
+from dataclasses import dataclass
+from functools import partial
+from pathlib import Path
 
 # VTK requires explicit imports for rendering backends
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
@@ -22,9 +22,9 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QMainWindow,
     QMenu,
     QMessageBox,
-    QMainWindow,
     QProgressBar,
     QSlider,
     QSplitter,
@@ -41,12 +41,12 @@ from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkRenderingCore import vtkRenderer
 
+from .i18n import install_translators
 from .interaction import InteractionController
 from .loader import CgnsLoader
 from .model import CgnsModel, Section, Zone
 from .scene import RenderStyle, SceneManager
 from .selection import SelectionController
-from .i18n import install_translators
 
 BACKGROUND_OPTIONS: dict[str, tuple[float, float, float]] = {
     "Dark Slate": (0.1, 0.1, 0.12),
@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
 
-    def _create_settings_dialog(self) -> "_SettingsDialog":
+    def _create_settings_dialog(self) -> _SettingsDialog:
         return _SettingsDialog(self._viewer_settings, self)
 
     def _open_settings(self) -> None:

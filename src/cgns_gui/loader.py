@@ -274,7 +274,13 @@ class CgnsLoader:
             cleaned_attr = self._clean_name(family_group.attrs.get("name"))
             group_clean = self._clean_name(family_name)
             display = cleaned_attr or group_clean or family_name
-            for candidate in (cleaned_attr, family_group.attrs.get("name"), family_name, group_clean):
+            candidates = (
+                cleaned_attr,
+                family_group.attrs.get("name"),
+                family_name,
+                group_clean,
+            )
+            for candidate in candidates:
                 key = self._normalize_key(candidate)
                 if key and key not in families:
                     families[key] = display

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
 

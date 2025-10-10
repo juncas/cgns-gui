@@ -15,8 +15,8 @@ pytest.importorskip("vtkmodules.qt.QVTKRenderWindowInteractor")
 from PySide6.QtWidgets import QDialog, QMainWindow, QToolBar
 
 from cgns_gui.app import MainWindow, SectionDetailsWidget, _ModelTreeWidget, _prepare_environment
-from cgns_gui.scene import RenderStyle
 from cgns_gui.model import BoundaryInfo, CgnsModel, MeshData, Section, Zone
+from cgns_gui.scene import RenderStyle
 
 
 def _is_headless() -> bool:
