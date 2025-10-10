@@ -33,6 +33,29 @@ python tools/build_package.py
 - 本地 Python 版本低于 3.10：升级或启用兼容环境
 - 依赖拉取失败：检查网络代理或私有 PyPI 设置
 
+### Windows 平台说明
+
+在 PowerShell 中执行打包脚本的命令与 Linux 基本一致，只需确保虚拟环境已激活：
+
+```powershell
+# 进入仓库根目录并激活虚拟环境
+cd C:\workspace\cgns-gui
+./.venv/Scripts/Activate.ps1
+
+# 运行打包脚本
+python tools/build_package.py
+```
+
+如遇 Windows Defender SmartScreen 阻止脚本执行，可在 PowerShell 中执行 `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` 后重试。
+
+脚本结束后可在当前终端使用以下命令快速验证生成的 wheel：
+
+```powershell
+pip install --force-reinstall dist\cgns_gui-<version>-py3-none-any.whl
+```
+
+> 若希望将构建结果复制到 CI 工件，可在 GitHub Actions 中追加 `actions/upload-artifact` 步骤。
+
 ## 预发布验证
 
 发布前建议执行以下步骤：

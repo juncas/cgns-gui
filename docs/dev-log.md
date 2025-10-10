@@ -28,6 +28,9 @@
 - 解析 ZoneBC 边界条件并与对应的面单元 Section 关联，树状视图下新增“Boundary Conditions”分组，详情面板展示 GridLocation 信息；补充加载与界面测试验证分组行为。
 - 扩充 `tests/test_loader.py` 验证 FamilyName 缺失时仍可从 Family_t 获取边界名称；新增 GitHub Actions CI（lint + pytest）流水线并在提交前本地验证通过。
 - 增加 `tools/build_package.py` 打包脚本、CLI entry point、发布指南文档；本地执行构建产出 sdist 与 wheel，更新开发计划完成 M6 打包任务。
+- 新增 `docs/windows-setup.md`，梳理 Windows 平台依赖、环境搭建与常见问题；同步 README 文档索引。
+- 更新 CI 流水线，加入 `windows-latest` 作业运行 lint、pytest 与 `python tools/build_package.py`，并验证 wheel 安装导入，支撑 M7 的跨平台验证。
+- 扩充 `docs/release-guide.md`，增加 PowerShell 环境下运行打包脚本与 wheel 冒烟测试的注意事项。
 
 ## 2025-10-09（续）
 

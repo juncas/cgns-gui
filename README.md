@@ -85,6 +85,7 @@ python -m cgns_gui.app --offscreen
 - `docs/development-plan.md`：详细开发计划与任务分解。
 - `docs/dev-log.md`：开发过程记录与每日摘要。
 - `docs/release-guide.md`：打包与发布流程说明。
+- `docs/windows-setup.md`：Windows 平台环境搭建与依赖说明。
 - `docs/architecture.md`（待补充）：模块设计与数据流。
 
 ## 打包与发布
