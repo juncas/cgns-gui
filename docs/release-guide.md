@@ -1,0 +1,71 @@
+# 发布与打包指南
+
+本文档说明如何基于仓库内容构建可分发的 CGNS GUI 包，并给出常见问题排查建议。
+
+## 环境准备
+
+1. 使用 Python 3.10 或以上版本。
+2. 推荐创建独立虚拟环境（例如 `conda create -n cgns-gui python=3.10`）。
+3. 安装项目及开发依赖：
+
+```bash
+pip install -e .[dev]
+```
+
+4. 确保安装 `build`（已包含在 `dev` extra 中，如有需要可单独执行 `pip install build`）。
+
+## 生成分发包
+
+仓库提供 `tools/build_package.py` 脚本封装了 `python -m build`：
+
+```bash
+python tools/build_package.py
+```
+
+脚本会在构建前清理 `dist/` 目录，并生成：
+
+- `dist/cgns_gui-<version>.tar.gz`（源代码包，sdist）
+- `dist/cgns_gui-<version>-py3-none-any.whl`（通用 wheel）
+
+若脚本返回非零退出码，请检查终端输出，常见问题包括：
+
+- 未安装 `build` 模块：`pip install build`
+- 本地 Python 版本低于 3.10：升级或启用兼容环境
+- 依赖拉取失败：检查网络代理或私有 PyPI 设置
+
+## 预发布验证
+
+发布前建议执行以下步骤：
+
+1. 运行测试套件：`pytest`
+2. 验证应用入口：
+   ```bash
+   python -m cgns_gui.app --offscreen
+   ```
+3. 安装构建产物进行冒烟测试：
+   ```bash
+   pip install dist/cgns_gui-<version>-py3-none-any.whl
+   cgns-gui --offscreen
+   ```
+
+## 发布到 PyPI（可选）
+
+1. 安装 `twine`：`pip install twine`
+2. 上传：
+   ```bash
+   twine upload dist/*
+   ```
+   若需上传到测试 PyPI，可增加 `--repository testpypi`
+
+## 常见问题排查
+
+| 问题 | 可能原因 | 解决方案 |
+| --- | --- | --- |
+| 构建输出缺少 wheel | `build` 失败或 dist 目录无写权限 | 检查终端日志，确认 dist 目录是否被锁定 |
+| 运行 GUI 报错 "QT_QPA_PLATFORM" | 当前环境无图形接口 | 设定 `QT_QPA_PLATFORM=offscreen` 或在图形环境中运行 |
+| 上传 PyPI 失败 | 账号凭据错误 / 版本号冲突 | 检查 `~/.pypirc`，并确保版本号递增 |
+
+## 后续规划
+
+- 集成自动化发布（GitHub Actions + PyPI API token）
+- 根据发行反馈完善 FAQ 与故障排查章节

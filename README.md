@@ -84,7 +84,26 @@ python -m cgns_gui.app --offscreen
 
 - `docs/development-plan.md`：详细开发计划与任务分解。
 - `docs/dev-log.md`：开发过程记录与每日摘要。
+- `docs/release-guide.md`：打包与发布流程说明。
 - `docs/architecture.md`（待补充）：模块设计与数据流。
+
+## 打包与发布
+
+项目提供 `tools/build_package.py` 帮助脚本，便于生成 sdist 与 wheel：
+
+```bash
+conda activate cgns-gui  # 或其他 Python 3.10+ 环境
+pip install build        # 若尚未安装
+python tools/build_package.py
+```
+
+脚本会清理旧的 `dist/` 目录并调用 `python -m build --sdist --wheel`。构建成功后，可在 `dist/` 目录找到 `*.tar.gz` 与 `*.whl` 文件。若需上传至 PyPI，推荐安装 `twine` 并执行：
+
+```bash
+twine upload dist/*
+```
+
+更详细的发布流程与常见问题请参考 `docs/release-guide.md`。
 
 ## 贡献指南
 
