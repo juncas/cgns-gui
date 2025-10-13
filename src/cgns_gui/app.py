@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 import sys
 import warnings
+import ctypes
 from collections.abc import MutableMapping
 from ctypes.util import find_library
 from dataclasses import dataclass
-from functools import partial
+from functools import lru_cache, partial
 from pathlib import Path
 
 # VTK requires explicit imports for rendering backends
@@ -40,7 +41,7 @@ from PySide6.QtWidgets import (
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
-from vtkmodules.vtkRenderingCore import vtkRenderer
+from vtkmodules.vtkRenderingCore import vtkRenderWindow, vtkRenderer
 
 if __package__ in {None, ""}:
     package_root = Path(__file__).resolve().parent.parent
@@ -75,6 +76,23 @@ class ViewerSettings:
     render_style: RenderStyle
 
 
+@lru_cache(maxsize=1)
+def _windows_supports_opengl() -> bool:
+    window: vtkRenderWindow | None = None
+    try:
+        window = vtkRenderWindow()
+        window.SetOffScreenRendering(0)
+        return bool(window.SupportsOpenGL())
+    except Exception:
+        return False
+    finally:
+        if window is not None:
+            try:
+                window.Finalize()
+            except Exception:
+                pass
+
+
 def _should_force_offscreen(
     environ: MutableMapping[str, str],
     *,
@@ -82,15 +100,30 @@ def _should_force_offscreen(
     path_exists=Path.exists,
     is_headless: bool | None = None,
 ) -> bool:
+    is_windows = os.name == "nt"
     if is_headless is None:
-        display = environ.get("DISPLAY")
-        is_headless = not bool(display)
+        if is_windows:
+            session = environ.get("SESSIONNAME", "")
+            is_headless = session.upper().startswith("RDP-")
+        else:
+            display = environ.get("DISPLAY")
+            is_headless = not bool(display)
     if environ.get("CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK") == "1":
         return False
     if is_headless:
         return True
-    if find_gl("GL") is None:
+    if not is_windows and find_gl("GL") is None:
         return True
+
+    if is_windows:
+        try:
+            # Windows provides OpenGL via opengl32.dll; failure implies no ICD.
+            ctypes.windll.opengl32  # type: ignore[attr-defined]
+        except (AttributeError, OSError):
+            return True
+        if not _windows_supports_opengl():
+            return True
+        return False
 
     drivers_env = environ.get("LIBGL_DRIVERS_PATH")
     search_dirs: list[str] = []
@@ -161,13 +194,17 @@ def _prepare_environment(
     if not force_offscreen and _should_force_offscreen(environ):
         warnings.warn(
             "OpenGL drivers not detected; falling back to offscreen rendering. "
-            "Install libgl1-mesa-dri or set CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK=1 to bypass.",
+            "Install vendor GPU drivers or a Mesa OpenGL package (e.g. libgl1-mesa-dri on Linux, "
+            "mesa-dist-win on Windows) or set CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK=1 to bypass.",
             RuntimeWarning,
             stacklevel=2,
         )
         force_offscreen = True
 
-    if force_offscreen or (platform is None and not display and not wayland):
+    # On Windows, Qt will automatically use the "windows" platform plugin if no platform is specified
+    # Only force offscreen if explicitly requested or if OpenGL is not available
+    is_windows = os.name == "nt"
+    if force_offscreen or (not is_windows and platform is None and not display and not wayland):
         environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         platform = environ.get("QT_QPA_PLATFORM")
 
@@ -175,7 +212,8 @@ def _prepare_environment(
         environ.setdefault("VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN", "1")
         return
 
-    if platform in {None, "", "xcb"}:
+    # Only check for xcb libs on Linux systems
+    if not is_windows and platform in {None, "", "xcb"}:
         missing = _missing_xcb_libs()
         if missing:
             message = (

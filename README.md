@@ -22,6 +22,10 @@
 	```
 	  缺失这些库时程序会给出明确提示；如需强行跳过检查，可设置 `CGNS_GUI_DISABLE_OFFSCREEN_FALLBACK=1`。
 	  在纯终端或无 `DISPLAY` 环境下程序会自动退回离屏模式，可结合 `--offscreen` 参数执行。
+- Windows 环境需要 OpenGL 3.2+ 支持：
+	- 推荐在物理机本地运行，确保显卡驱动已更新到最新版本
+	- 远程桌面环境可能无法提供 OpenGL 支持，建议使用 `--offscreen` 模式或切换到支持 GPU 直通的远程工具（Parsec、NoMachine）
+	- 详细的 Windows OpenGL 问题排查，请参考 `docs/windows-opengl-troubleshooting.md`
 
 ### 安装步骤
 

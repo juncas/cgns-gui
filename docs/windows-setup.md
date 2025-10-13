@@ -91,7 +91,8 @@ python tools/build_package.py
 | --- | --- | --- |
 | 缺少 MSVC 运行库 | 导入 PySide6/VTK 报 `VCRUNTIME140.dll` 或 `MSVCP140.dll` 缺失 | 安装 Visual C++ Redistributable 2015-2022（x64） |
 | 使用 32 位 Python | VTK 导入失败，提示 `DLL load failed` | 安装 64 位 Python，并重新创建虚拟环境 |
-| 远程桌面渲染崩溃 | 打开窗口即退出或显示空白 | 运行时追加 `--offscreen`，或设定 `set QT_QPA_PLATFORM=offscreen` |
+| 远程桌面渲染崩溃 | 打开窗口即退出或显示空白 | 运行时追加 `--offscreen`，或设定 `set QT_QPA_PLATFORM=offscreen`；如需窗口模式请改用支持 GPU 直通的工具（Parsec、NoMachine 等） |
+| OpenGL 未初始化 | 日志出现 `failed to get valid pixel format` | 更新显卡驱动；或在无硬件 GPU 时下载 [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases)，将 `opengl32.dll` 放在 `python.exe` 同目录后重试 |
 | Qt 插件冲突 | 启动时报错无法加载 `platform plugin "windows"` | 清理或重置 `QT_PLUGIN_PATH`，确保只使用 PySide6 提供的插件 |
 | CGNS 文件加载异常 | 读取大文件时抛出 HDF5 相关错误 | 确保文件未被其他程序占用，必要时复制至本地磁盘后再加载 |
 
