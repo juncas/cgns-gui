@@ -240,3 +240,24 @@ def test_scene_manager_bounds_respect_visibility():
     scene.set_section_visible(key, False)
     assert scene.visible_bounds() is None
     assert scene.scene_bounds() == scene_bounds
+
+
+def test_scene_manager_axes_actor_position_and_scaling():
+    renderer = vtkRenderer()
+    scene = SceneManager(renderer)
+    # 初始无模型，坐标轴应存在于场景
+    assert scene._axes_actor in renderer.GetActors()
+    # 加载模型后，坐标轴仍应存在
+    scene.load_model(_sample_model())
+    assert scene._axes_actor in renderer.GetActors()
+    # 检查坐标轴位置和长度是否合理
+    bounds = scene.visible_bounds() or scene.scene_bounds()
+    if bounds:
+        x, y, z = bounds[0], bounds[2], bounds[4]
+        axes_pos = scene._axes_actor.GetPosition()
+        assert axes_pos == pytest.approx((x, y, z))
+        size = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+        axes_len = scene._axes_actor.GetTotalLength()
+        assert axes_len[0] == pytest.approx(max(0.1, size * 0.1))
+        assert axes_len[1] == pytest.approx(max(0.1, size * 0.1))
+        assert axes_len[2] == pytest.approx(max(0.1, size * 0.1))

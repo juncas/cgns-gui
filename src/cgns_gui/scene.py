@@ -123,7 +123,6 @@ class SceneManager:
                 actor = self._create_actor(section)
                 color = self._pick_color(zone_idx, section_idx)
                 actor.GetProperty().SetColor(*color)
-                actor.GetProperty().EdgeVisibilityOn()
                 actor.GetProperty().SetEdgeColor(0.15, 0.15, 0.15)
                 self._apply_style(actor)
                 self._renderer.AddActor(actor)
@@ -229,8 +228,10 @@ class SceneManager:
         prop = actor.GetProperty()
         if self._style is RenderStyle.WIREFRAME:
             prop.SetRepresentationToWireframe()
+            prop.EdgeVisibilityOff()
         else:
             prop.SetRepresentationToSurface()
+            prop.EdgeVisibilityOff()
 
     def _apply_highlight(
         self,
@@ -243,7 +244,11 @@ class SceneManager:
         highlight = tuple(min(component + 0.25, 1.0) for component in color)
         prop.SetColor(*highlight)
         prop.SetLineWidth(2.0)
-        prop.EdgeVisibilityOn()
+        # Show edges in wireframe mode or when highlighted
+        if self._style is RenderStyle.WIREFRAME:
+            prop.EdgeVisibilityOff()
+        else:
+            prop.EdgeVisibilityOn()
         prop.SetOpacity(self._opacity_for_key(key))
 
     def _apply_base_style(
@@ -256,7 +261,11 @@ class SceneManager:
         if base_color is not None:
             prop.SetColor(*base_color)
         prop.SetLineWidth(1.0)
-        prop.EdgeVisibilityOn()
+        # Hide edges in surface mode, show in wireframe mode
+        if self._style is RenderStyle.WIREFRAME:
+            prop.EdgeVisibilityOff()
+        else:
+            prop.EdgeVisibilityOff()
         prop.SetOpacity(self._opacity_for_key(key))
 
     def set_section_transparency(self, key: tuple[str, int], value: float) -> None:

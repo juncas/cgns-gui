@@ -39,9 +39,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+from vtkmodules.vtkCommonCore import vtkOutputWindow
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkRenderingCore import vtkRenderWindow, vtkRenderer
+
+# Suppress VTK output window popups
+vtkOutputWindow.SetGlobalWarningDisplay(0)
 
 # Handle both direct execution and package imports
 try:
