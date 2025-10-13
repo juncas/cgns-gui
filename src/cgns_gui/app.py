@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import sys
 import warnings
-import ctypes
 from collections.abc import MutableMapping
 from ctypes.util import find_library
 from dataclasses import dataclass
@@ -42,7 +42,7 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkCommonCore import vtkOutputWindow
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
-from vtkmodules.vtkRenderingCore import vtkRenderWindow, vtkRenderer
+from vtkmodules.vtkRenderingCore import vtkRenderer, vtkRenderWindow
 
 # Suppress VTK output window popups
 vtkOutputWindow.SetGlobalWarningDisplay(0)
@@ -214,8 +214,9 @@ def _prepare_environment(
         )
         force_offscreen = True
 
-    # On Windows, Qt will automatically use the "windows" platform plugin if no platform is specified
-    # Only force offscreen if explicitly requested or if OpenGL is not available
+    # On Windows, Qt will automatically use the "windows" platform plugin
+    # if no platform is specified. Only force offscreen if explicitly requested
+    # or if OpenGL is not available.
     is_windows = os.name == "nt"
     if force_offscreen or (not is_windows and platform is None and not display and not wayland):
         environ.setdefault("QT_QPA_PLATFORM", "offscreen")
