@@ -1,14 +1,15 @@
 """Detailed test script to debug application startup."""
-import sys
 import os
+import sys
 
 # Set environment to show more info
 os.environ['QT_LOGGING_RULES'] = '*.debug=false;qt.qpa.*=true'
 
 print("Step 1: Importing modules...")
 try:
-    from cgns_gui.app import main, _prepare_environment, MainWindow
     from PySide6.QtWidgets import QApplication
+
+    from cgns_gui.app import MainWindow, _prepare_environment
     print("✓ Modules imported successfully")
 except Exception as e:
     print(f"✗ Import failed: {e}")

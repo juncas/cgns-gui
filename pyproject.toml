@@ -35,9 +35,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 qt_api = "pyside6"
 addopts = "-ra"
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+exclude = ["test_app.py", "test_app_detailed.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
