@@ -43,18 +43,27 @@ from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkRenderingCore import vtkRenderWindow, vtkRenderer
 
-if __package__ in {None, ""}:
+# Handle both direct execution and package imports
+try:
+    from .i18n import install_translators
+    from .interaction import AdaptiveTrackballCameraStyle, InteractionController
+    from .loader import CgnsLoader
+    from .model import CgnsModel, Section, Zone
+    from .scene import RenderStyle, SceneManager
+    from .selection import SelectionController
+except ImportError:
+    # Fallback for direct execution
     package_root = Path(__file__).resolve().parent.parent
     package_path = str(package_root)
     if package_path not in sys.path:
         sys.path.insert(0, package_path)
-
-from .i18n import install_translators
-from .interaction import AdaptiveTrackballCameraStyle, InteractionController
-from .loader import CgnsLoader
-from .model import CgnsModel, Section, Zone
-from .scene import RenderStyle, SceneManager
-from .selection import SelectionController
+    
+    from cgns_gui.i18n import install_translators
+    from cgns_gui.interaction import AdaptiveTrackballCameraStyle, InteractionController
+    from cgns_gui.loader import CgnsLoader
+    from cgns_gui.model import CgnsModel, Section, Zone
+    from cgns_gui.scene import RenderStyle, SceneManager
+    from cgns_gui.selection import SelectionController
 
 BACKGROUND_OPTIONS: dict[str, tuple[float, float, float]] = {
     "Dark Slate": (0.1, 0.1, 0.12),
