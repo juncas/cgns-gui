@@ -13,7 +13,7 @@
 ## 环境需求
 
 - Python 3.10+
-- 推荐使用虚拟环境（Conda / venv）。
+- **Conda 环境**（推荐）：pyCGNS 需要通过 conda-forge 安装
 - 依赖列表详见 `pyproject.toml`。
 - Linux 环境运行带窗口的 GUI 时，请确保安装 Mesa OpenGL 组件与 Qt xcb 依赖，例如：
 	```bash
@@ -29,16 +29,25 @@
 
 ### 安装步骤
 
+**重要**：本项目使用 pyCGNS 进行 CGNS 文件解析，需要通过 conda 安装：
+
 ```bash
-# 创建并激活虚拟环境（示例：conda）
+# 1. 创建并激活 conda 环境
 conda create -n cgns-gui python=3.10 -y
 conda activate cgns-gui
 
-# 安装依赖
+# 2. 安装 pyCGNS（必须先安装，因为它不在 PyPI）
+conda install -c conda-forge pycgns -y
+
+# 3. 安装项目依赖
 pip install -e .[dev]
 ```
 
-如使用系统提供的 Conda 环境，可直接在根目录执行 `pip install -e .[dev]`。
+**为什么使用 pyCGNS？**
+- 完整的 CGNS/SIDS 标准支持，正确处理边界条件、Family 分组
+- 为后续流场数据（FlowSolution_t）支持打下基础
+- CFD 社区标准工具，大多数 CFD 软件使用相同的库
+- 详见 `docs/pycgns-migration.md`
 
 ## 开发节奏
 
