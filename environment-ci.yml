@@ -1,0 +1,9 @@
+# Minimal conda environment for CI testing
+# pyCGNS must be installed separately via conda after environment creation
+name: cgns-gui-ci
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip

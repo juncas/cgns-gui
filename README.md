@@ -13,8 +13,9 @@
 ## 环境需求
 
 - Python 3.10+
-- **Conda 环境**（推荐）：pyCGNS 需要通过 conda-forge 安装
-- 依赖列表详见 `pyproject.toml`。
+- **推荐使用 uv** 进行依赖管理（快速、现代的 Python 包管理器）
+- 或使用 **Conda 环境**：pyCGNS 需要通过 conda-forge 安装
+- 依赖列表详见 `pyproject.toml`
 - Linux 环境运行带窗口的 GUI 时，请确保安装 Mesa OpenGL 组件与 Qt xcb 依赖，例如：
 	```bash
 	sudo apt install libgl1-mesa-glx libgl1-mesa-dri libxcb-cursor0 \
@@ -29,7 +30,34 @@
 
 ### 安装步骤
 
-**重要**：本项目使用 pyCGNS 进行 CGNS 文件解析，需要通过 conda 安装：
+#### 方法 1：使用 uv（推荐，最快速）
+
+```bash
+# 1. 安装 uv (如果还没安装)
+# Windows (PowerShell):
+irm https://astral.sh/uv/install.ps1 | iex
+# Linux/macOS:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. 运行自动化设置脚本
+# Windows:
+.\setup-uv.ps1
+# Linux/macOS:
+chmod +x setup-uv.sh && ./setup-uv.sh
+
+# 3. 安装 pyCGNS（必须，因为不在 PyPI）
+conda install -c conda-forge pycgns
+# 或从源码构建: https://github.com/pyCGNS/pyCGNS
+
+# 4. 运行应用
+uv run cgns-gui
+# 或激活环境后直接运行:
+# Windows: .venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
+# 然后: python -m cgns_gui.app
+```
+
+#### 方法 2：使用传统 conda + pip
 
 ```bash
 # 1. 创建并激活 conda 环境

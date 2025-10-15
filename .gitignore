@@ -16,6 +16,10 @@ dist/
 .venv/
 .env/
 
+# uv
+.python-version.bak
+uv.lock
+
 # Editor
 .vscode/
 .idea/

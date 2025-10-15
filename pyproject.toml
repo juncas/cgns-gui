@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "cgns-gui"
@@ -14,7 +14,7 @@ dependencies = [
     "PySide6>=6.7",
     "vtk>=9.3",
     "h5py>=3.10",
-    "numpy>=1.26"
+    "numpy>=1.26",
 ]
 dynamic = []
 
@@ -23,14 +23,28 @@ dev = [
     "pytest>=8.0",
     "pytest-qt>=4.3",
     "ruff>=0.6",
-    "build>=1.2"
+    "pyinstaller>=6.0",
 ]
 
 [project.scripts]
 cgns-gui = "cgns_gui.app:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/cgns_gui"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.3",
+    "ruff>=0.6",
+    "pyinstaller>=6.0",
+]
+
+[tool.uv.sources]
+# pyCGNS is not on PyPI, install from conda-forge or source
+# Users need to install pyCGNS separately via:
+#   conda install -c conda-forge pycgns
+# or build from source
 
 [tool.pytest.ini_options]
 qt_api = "pyside6"
