@@ -47,6 +47,8 @@ jobs:
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
 
+      # pyCGNS is not available on PyPI, must be installed via conda-forge
+      # This is the recommended installation method per project documentation
       - name: Install pyCGNS via conda
         shell: bash -el {0}
         run: |
