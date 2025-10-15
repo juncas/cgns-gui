@@ -64,19 +64,43 @@ class SelectionController(QObject):
             return
 
         key = None
-        if hasattr(self._tree, "section_key"):
-            key = self._tree.section_key(self._tree.currentItem())  # type: ignore[attr-defined]
+        family_keys = None
+        
+        current_item = self._tree.currentItem()
+        
+        # 检查是否是 Family 节点
+        if hasattr(self._tree, "get_family_sections"):
+            family_keys = self._tree.get_family_sections(current_item)  # type: ignore[attr-defined]
+        
+        # 如果不是 Family，获取单个 section key
+        if family_keys is None and hasattr(self._tree, "section_key"):
+            key = self._tree.section_key(current_item)  # type: ignore[attr-defined]
 
         self._updating = True
         try:
-            if key is None:
-                highlight_key = None
+            if family_keys:
+                # Family 节点：高亮所有相关 sections
+                visible_keys = [k for k in family_keys if self._scene.is_section_visible(k)]
+                self._scene.highlight_multiple(visible_keys)
+                # 立即刷新渲染
+                self._interactor.GetRenderWindow().Render()
+                # 发送第一个 key 用于详情显示，或者 None
+                self.sectionChanged.emit(visible_keys[0] if visible_keys else None)
+            elif key is None:
+                # 无选择
+                self._scene.highlight(None)
+                self._interactor.GetRenderWindow().Render()
+                self.sectionChanged.emit(None)
             elif self._scene.is_section_visible(key):
-                highlight_key = key
+                # 单个 section 节点
+                self._scene.highlight(key)
+                self._interactor.GetRenderWindow().Render()
+                self.sectionChanged.emit(key)
             else:
-                highlight_key = None
-            self._scene.highlight(highlight_key)
-            self.sectionChanged.emit(key)
+                # Section 不可见
+                self._scene.highlight(None)
+                self._interactor.GetRenderWindow().Render()
+                self.sectionChanged.emit(None)
         finally:
             self._updating = False
 

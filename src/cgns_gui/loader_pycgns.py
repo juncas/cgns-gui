@@ -15,7 +15,7 @@ except ImportError as e:
     )
     raise ImportError(msg) from e
 
-from .model import BoundaryInfo, CgnsModel, FamilyInfo, MeshData, Section, Zone
+from .model import BoundaryInfo, CgnsModel, MeshData, Section, Zone
 
 # CGNS element type codes (pyCGNS values)
 # Reference: CGNS/SIDS Element Type definitions
@@ -79,21 +79,16 @@ class CgnsLoader:
         self._tree, _, _ = cgnsmap.load(str(path))
 
         zones: list[Zone] = []
-        families: dict[str, FamilyInfo] = {}
         
         # Find all Base nodes
         for base in self._get_children_by_type(self._tree, ['CGNSBase_t', 'Base_t']):
-            # Collect families from this base
-            base_families = self._read_families(base)
-            families.update(base_families)
-            
             # Find all Zone nodes in this base
             for zone_node in self._get_children_by_type(base, 'Zone_t'):
                 zone = self._read_zone(zone_node, base)
                 if zone:
                     zones.append(zone)
         
-        return CgnsModel(zones=zones, families=families)
+        return CgnsModel(zones=zones)
 
     def _get_children_by_type(self, parent: list, node_types: str | list[str]) -> list[list]:
         """Get all child nodes of given type(s) from parent node.
@@ -270,44 +265,29 @@ class CgnsLoader:
                 bc_name,
             ]
             
-            matched_sections: list[Section] = []
+            section: Section | None = None
             resolved_name = ""
             
-            # 1. 尝试精确匹配
             for candidate in candidates:
                 key = self._normalize_key(candidate)
                 if key and key in section_lookup and section_lookup[key]:
-                    while section_lookup[key]:
-                        matched_sections.append(section_lookup[key].pop(0))
-                    resolved_name = candidate or matched_sections[0].name
-                    section_lookup.pop(key, None)
+                    section = section_lookup[key].pop(0)
+                    resolved_name = candidate or section.name
+                    if not section_lookup[key]:
+                        section_lookup.pop(key, None)
                     break
             
-            # 2. 如果精确匹配失败，尝试部分匹配（BC 名称包含在 section 名称中）
-            if not matched_sections:
-                bc_key = self._normalize_key(bc_name)
-                if bc_key:
-                    for section_key in list(section_lookup.keys()):
-                        if bc_key in section_key and section_lookup[section_key]:
-                            # 找到部分匹配，取出所有匹配的 sections
-                            while section_lookup[section_key]:
-                                matched_sections.append(section_lookup[section_key].pop(0))
-                            section_lookup.pop(section_key, None)
-            
-            if not matched_sections:
+            if section is None:
                 continue
             
             # Extract BC metadata
             grid_location = self._read_grid_location(bc_node)
             family_name = self._read_family_name(bc_node, families)
             
-            # 为所有匹配的 sections 附加边界信息
-            for section in matched_sections:
-                section.boundary = BoundaryInfo(
-                    name=family_name or resolved_name or section.name,
-                    grid_location=grid_location,
-                    family=family_name,  # 记录 Family 关联
-                )
+            section.boundary = BoundaryInfo(
+                name=family_name or resolved_name or section.name,
+                grid_location=grid_location,
+            )
 
     def _read_grid_location(self, bc_node: list) -> str | None:
         """Read GridLocation from BC node."""
@@ -343,56 +323,13 @@ class CgnsLoader:
                     key = self._normalize_key(clean)
                     return families.get(key, clean)
         
-        # Try matching BC name to families (exact match)
+        # Try matching BC name to families
         bc_name = bc_node[0]
         key = self._normalize_key(bc_name)
         if key and key in families:
             return families[key]
         
-        # Try partial matching: check if any family name is contained in BC name
-        # e.g., "symmetry" matches "tri_symmetry" or "quad_symmetry"
-        if bc_name:
-            bc_name_upper = bc_name.upper()
-            for family_key, family_display_name in families.items():
-                if family_key in bc_name_upper:
-                    return family_display_name
-        
         return None
-
-    def _read_families(self, base_node: list) -> dict[str, FamilyInfo]:
-        """Read all Family_t nodes from base and return FamilyInfo dict.
-        
-        Args:
-            base_node: CGNS Base node
-            
-        Returns:
-            Dictionary mapping family name to FamilyInfo
-        """
-        families: dict[str, FamilyInfo] = {}
-        
-        for family_node in self._get_children_by_type(base_node, 'Family_t'):
-            family_name = family_node[0]
-            clean_name = self._clean_name(family_name)
-            display_name = clean_name or family_name
-            
-            # Try to read BCType from FamilyBC_t node
-            bc_type = None
-            family_bc_nodes = self._get_children_by_type(family_node, 'FamilyBC_t')
-            if family_bc_nodes:
-                # FamilyBC_t value is a string like "BCWall", "BCSymmetryPlane"
-                bc_node = family_bc_nodes[0]
-                if bc_node[1] is not None and isinstance(bc_node[1], np.ndarray):
-                    bc_value = bc_node[1]
-                    if bc_value.size > 0:
-                        raw = bc_value.flat[0]
-                        if isinstance(raw, bytes):
-                            bc_type = raw.decode('utf-8', errors='ignore').strip()
-                        else:
-                            bc_type = str(raw).strip()
-            
-            families[display_name] = FamilyInfo(name=display_name, bc_type=bc_type)
-        
-        return families
 
     def _collect_families(self, base_node: list) -> dict[str, str]:
         """Collect Family_t nodes from base and create a lookup dict."""

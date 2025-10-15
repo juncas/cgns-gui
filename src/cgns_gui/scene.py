@@ -118,10 +118,30 @@ class SceneManager:
 
     def load_model(self, model: CgnsModel) -> None:
         self.clear()
+        
+        # 构建 Family 到颜色的映射
+        family_colors: dict[str, tuple[float, float, float]] = {}
+        palette = self._color_palette
+        for family_idx, family_name in enumerate(sorted(model.families.keys())):
+            # 为每个 Family 分配一个唯一颜色，直接使用 palette 索引
+            color_idx = family_idx % len(palette)
+            family_colors[family_name] = palette[color_idx]
+        
         for zone_idx, zone in enumerate(model.zones):
             for section_idx, section in enumerate(zone.sections):
                 actor = self._create_actor(section)
-                color = self._pick_color(zone_idx, section_idx)
+                
+                # 根据 Family 或 Zone 分配颜色
+                if section.boundary and section.boundary.family:
+                    # 有 Family 的边界条件：使用 Family 颜色
+                    fallback_color = self._pick_color(zone_idx, section_idx)
+                    color = family_colors.get(
+                        section.boundary.family, fallback_color
+                    )
+                else:
+                    # 体单元或无 Family 的边界条件：使用 Zone/Section 颜色
+                    color = self._pick_color(zone_idx, section_idx)
+                
                 actor.GetProperty().SetColor(*color)
                 actor.GetProperty().SetEdgeColor(0.15, 0.15, 0.15)
                 self._apply_style(actor)
@@ -207,6 +227,7 @@ class SceneManager:
         return self._style
 
     def highlight(self, key: tuple[str, int] | None) -> None:
+        """高亮单个 section"""
         if key is not None and key not in self._actors:
             key = None
 
@@ -220,6 +241,25 @@ class SceneManager:
         for section_key, actor in self._actors.items():
             base_color = self._base_colors.get(section_key)
             if section_key == key:
+                self._apply_highlight(section_key, actor, base_color)
+            else:
+                self._apply_base_style(section_key, actor, base_color)
+    
+    def highlight_multiple(self, keys: list[tuple[str, int]]) -> None:
+        """高亮多个 sections（用于 Family 选择）"""
+        # 过滤出存在且可见的 keys
+        valid_keys = set()
+        for key in keys:
+            if key in self._actors and self.is_section_visible(key):
+                valid_keys.add(key)
+        
+        # 清除单个高亮状态
+        self._highlighted = None
+        
+        # 应用高亮样式
+        for section_key, actor in self._actors.items():
+            base_color = self._base_colors.get(section_key)
+            if section_key in valid_keys:
                 self._apply_highlight(section_key, actor, base_color)
             else:
                 self._apply_base_style(section_key, actor, base_color)
@@ -323,29 +363,38 @@ class SceneManager:
             "QUAD_4",
         }
         if element_type in volume_types:
-            return 0.0
+            return 0.3  # 体积单元使用透明度以便查看内部（当显示时）
         if element_type in surface_types:
-            return 0.0
+            return 0.0  # 表面单元不透明
         # Treat lines and unknown types as opaque by default
         return 0.0
 
     @staticmethod
     def _default_visibility(element_type: str) -> bool:
+        """默认可见性：表面单元和边界条件可见，体积单元隐藏以提升性能"""
         volume_types = {
             "TETRA_4",
             "PYRA_5",
             "PENTA_6",
             "HEXA_8",
         }
+        # 体积单元默认隐藏，表面单元和边界条件默认显示
         return element_type not in volume_types
 
     @staticmethod
     def _build_palette():
+        """构建更丰富的调色板，支持更多 Families"""
         return [
-            (0.2, 0.6, 0.9),
-            (0.9, 0.5, 0.2),
-            (0.2, 0.8, 0.5),
-            (0.8, 0.3, 0.6),
-            (0.7, 0.7, 0.2),
-            (0.4, 0.4, 0.8),
+            (0.2, 0.6, 0.9),   # 蓝色 - Body
+            (0.9, 0.5, 0.2),   # 橙色 - Flap
+            (0.2, 0.8, 0.5),   # 绿色 - Slat
+            (0.8, 0.3, 0.6),   # 紫红 - Unspecified
+            (0.7, 0.7, 0.2),   # 黄色 - Wing
+            (0.4, 0.4, 0.8),   # 靛蓝 - far_field
+            (0.9, 0.3, 0.3),   # 红色 - symmetry
+            (0.3, 0.9, 0.9),   # 青色
+            (0.9, 0.6, 0.9),   # 粉红
+            (0.5, 0.9, 0.3),   # 亮绿
+            (0.8, 0.5, 0.1),   # 棕色
+            (0.5, 0.5, 0.9),   # 淡蓝
         ]

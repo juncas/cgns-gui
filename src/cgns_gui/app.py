@@ -14,7 +14,7 @@ from pathlib import Path
 
 # VTK requires explicit imports for rendering backends
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-from PySide6.QtCore import QModelIndex, Qt, Signal
+from PySide6.QtCore import QModelIndex, Qt, QThread, Signal
 from PySide6.QtGui import QAction, QActionGroup, QFont, QFontDatabase
 from PySide6.QtWidgets import (
     QApplication,
@@ -256,6 +256,28 @@ def _configure_application_font(app: QApplication) -> None:
             return
 
 
+class CgnsLoaderThread(QThread):
+    """后台线程用于加载 CGNS 文件，避免阻塞 UI"""
+    
+    # 信号：加载完成(成功时传递模型)
+    loaded = Signal(object)
+    # 信号：加载失败(传递错误信息)
+    error = Signal(str)
+    
+    def __init__(self, file_path: str, parent=None) -> None:  # noqa: ANN001
+        super().__init__(parent)
+        self._file_path = file_path
+    
+    def run(self) -> None:
+        """在后台线程中加载 CGNS 文件"""
+        try:
+            loader = CgnsLoader()
+            model = loader.load(self._file_path)
+            self.loaded.emit(model)
+        except Exception as e:  # noqa: BLE001
+            self.error.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     """Main window embedding a VTK render view."""
 
@@ -266,6 +288,7 @@ class MainWindow(QMainWindow):
 
         self._model: CgnsModel | None = None
         self._loader = CgnsLoader()
+        self._loader_thread: CgnsLoaderThread | None = None  # 加载线程
 
         central = QWidget(self)
         layout = QVBoxLayout(central)
@@ -380,25 +403,46 @@ class MainWindow(QMainWindow):
             self._adaptive_style.set_scene_bounds(bounds)
 
     def load_file(self, path: str) -> None:
-        """Load a CGNS file and refresh the UI."""
-
+        """异步加载 CGNS 文件，避免阻塞 UI"""
+        
+        # 如果有正在运行的加载线程，先停止它
+        if self._loader_thread is not None and self._loader_thread.isRunning():
+            self._loader_thread.quit()
+            self._loader_thread.wait()
+        
         filename = Path(path).name
         self._show_loading(filename)
-        try:
-            model = self._loader.load(path)
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(
-                self.tr("Failed to read {filename}").format(filename=filename),
-                str(exc),
-            )
-        else:
-            self.load_model(model)
-            self._status_bar.showMessage(
-                self.tr("Load complete: {filename}").format(filename=filename),
-                5000,
-            )
-        finally:
-            self._hide_loading()
+        
+        # 创建并启动加载线程
+        self._loader_thread = CgnsLoaderThread(path, self)
+        self._loader_thread.loaded.connect(self._on_file_loaded)
+        self._loader_thread.error.connect(self._on_file_load_error)
+        self._loader_thread.start()
+    
+    def _on_file_loaded(self, model: CgnsModel) -> None:
+        """当文件加载成功时调用（在主线程中）"""
+        self._hide_loading()  # 立即隐藏进度条
+        
+        self.load_model(model)
+        filename = "CGNS file"
+        if self._loader_thread:
+            filename = Path(self._loader_thread._file_path).name
+        self._status_bar.showMessage(
+            self.tr("Load complete: {filename}").format(filename=filename),
+            5000,
+        )
+    
+    def _on_file_load_error(self, error_msg: str) -> None:
+        """当文件加载失败时调用（在主线程中）"""
+        self._hide_loading()  # 立即隐藏进度条
+        
+        filename = "CGNS file"
+        if self._loader_thread:
+            filename = Path(self._loader_thread._file_path).name
+        self._show_error(
+            self.tr("Failed to read {filename}").format(filename=filename),
+            error_msg,
+        )
 
     def load_model(self, model: CgnsModel) -> None:
         self._model = model
@@ -520,10 +564,9 @@ class MainWindow(QMainWindow):
                 self._ensure_orientation_widget(interactor)
         if self._orientation_widget is not None:
             self._orientation_widget.SetEnabled(1 if checked else 0)
-            if checked:
-                self._orientation_widget.InteractiveOn()
-            else:
-                self._orientation_widget.InteractiveOff()
+            # 禁用交互模式以避免拖动后卡住的问题
+            # 用户仍然可以看到坐标轴，但不能拖动它
+            self._orientation_widget.InteractiveOff()
         self.vtk_widget.GetRenderWindow().Render()
 
     def _ensure_orientation_widget(self, interactor) -> None:
@@ -539,10 +582,10 @@ class MainWindow(QMainWindow):
         widget.SetInteractor(interactor)
         widget.SetViewport(0.0, 0.0, 0.25, 0.25)
         widget.SetEnabled(1)
-        widget.InteractiveOn()
+        # 默认禁用交互模式，避免拖动后卡住
+        widget.InteractiveOff()
         if self._orientation_action and not self._orientation_action.isChecked():
             widget.SetEnabled(0)
-            widget.InteractiveOff()
         self._orientation_widget = widget
 
     def _set_surface_mode(self, checked: bool) -> None:
@@ -710,22 +753,75 @@ class _ModelTreeWidget(QTreeWidget):
         self.setColumnWidth(0, 200)
         self._section_index: dict[tuple[str, int], QTreeWidgetItem] = {}
         self._section_data: dict[tuple[str, int], tuple[Zone, Section]] = {}
+        self._family_sections: dict[str, list[tuple[str, int]]] = {}  # family_name -> section keys
+        self._model: CgnsModel | None = None
 
     def populate(self, model: CgnsModel) -> None:
         self.clear()
         self._section_index.clear()
         self._section_data.clear()
+        self._family_sections.clear()
+        self._model = model
+        
+        # 构建 Family -> Sections 映射
+        family_to_sections: dict[str, list[tuple[Zone, Section]]] = {}
+        for zone in model.zones:
+            for section in zone.iter_boundary_sections():
+                if section.boundary and section.boundary.family:
+                    family_name = section.boundary.family
+                    if family_name not in family_to_sections:
+                        family_to_sections[family_name] = []
+                    family_to_sections[family_name].append((zone, section))
+        
+        # 添加 Families 分组（如果存在）
+        if model.families:
+            families_group = QTreeWidgetItem([self.tr("Families"), "", ""])
+            families_group.setFlags(families_group.flags() & ~Qt.ItemIsSelectable)
+            self.addTopLevelItem(families_group)
+            
+            for family_name, family_info in sorted(model.families.items()):
+                type_str = family_info.bc_type or "Family"
+                
+                # 计算该 Family 下的总单元数
+                total_cells = 0
+                section_keys = []
+                if family_name in family_to_sections:
+                    for zone, section in family_to_sections[family_name]:
+                        total_cells += section.mesh.connectivity.shape[0]
+                        section_keys.append((zone.name, section.id))
+                
+                cells_str = str(total_cells) if total_cells > 0 else ""
+                family_item = QTreeWidgetItem([family_name, type_str, cells_str])
+                
+                # Family 节点存储特殊标记
+                family_item.setData(0, Qt.UserRole, ("family", family_name))
+                families_group.addChild(family_item)
+                
+                # 记录该 Family 包含的 sections
+                if section_keys:
+                    self._family_sections[family_name] = section_keys
+                    
+                    # 在 Family 下添加所属的 BC sections
+                    if family_name in family_to_sections:
+                        for zone, section in family_to_sections[family_name]:
+                            self._add_single_section(family_item, zone, section, boundary=True)
+        
+        # 添加 Zones
         for zone in model.zones:
             zone_item = QTreeWidgetItem([zone.name, self.tr("Zone"), str(zone.total_cells)])
             self.addTopLevelItem(zone_item)
             body_sections = list(zone.iter_body_sections())
             boundary_sections = list(zone.iter_boundary_sections())
             self._add_sections(zone_item, zone, body_sections, boundary=False)
-            if boundary_sections:
+            
+            # 只添加没有 Family 关联的 BC sections
+            orphan_bcs = [s for s in boundary_sections if not (s.boundary and s.boundary.family)]
+            if orphan_bcs:
                 boundary_group = QTreeWidgetItem([self.tr("Boundary Conditions"), "", ""])
                 boundary_group.setFlags(boundary_group.flags() & ~Qt.ItemIsSelectable)
                 zone_item.addChild(boundary_group)
-                self._add_sections(boundary_group, zone, boundary_sections, boundary=True)
+                self._add_sections(boundary_group, zone, orphan_bcs, boundary=True)
+        
         self.expandAll()
 
     def _add_sections(
@@ -737,34 +833,59 @@ class _ModelTreeWidget(QTreeWidget):
         boundary: bool,
     ) -> None:
         for section in sections:
-            display_name = section.name
-            type_label = section.element_type
-            if boundary and section.boundary is not None:
-                display_name = section.boundary.name or section.name
-                location = section.boundary.grid_location
-                if location:
-                    type_label = self.tr("Boundary ({element}, {location})").format(
-                        element=section.element_type,
-                        location=location,
-                    )
-                else:
-                    type_label = self.tr("Boundary ({element})").format(
-                        element=section.element_type,
-                    )
-            cells = str(section.mesh.connectivity.shape[0])
-            item = QTreeWidgetItem([display_name, type_label, cells])
-            key = (zone.name, section.id)
-            item.setData(0, Qt.UserRole, key)
-            parent.addChild(item)
-            self._section_index[key] = item
-            self._section_data[key] = (zone, section)
+            self._add_single_section(parent, zone, section, boundary=boundary)
+    
+    def _add_single_section(
+        self,
+        parent: QTreeWidgetItem,
+        zone: Zone,
+        section: Section,
+        *,
+        boundary: bool,
+    ) -> None:
+        """添加单个 section 到树中"""
+        display_name = section.name
+        type_label = section.element_type
+        if boundary and section.boundary is not None:
+            display_name = section.boundary.name or section.name
+            location = section.boundary.grid_location
+            if location:
+                type_label = self.tr("Boundary ({element}, {location})").format(
+                    element=section.element_type,
+                    location=location,
+                )
+            else:
+                type_label = self.tr("Boundary ({element})").format(
+                    element=section.element_type,
+                )
+        cells = str(section.mesh.connectivity.shape[0])
+        item = QTreeWidgetItem([display_name, type_label, cells])
+        key = (zone.name, section.id)
+        item.setData(0, Qt.UserRole, key)
+        parent.addChild(item)
+        self._section_index[key] = item
+        self._section_data[key] = (zone, section)
 
     def section_key(self, item: QTreeWidgetItem | None) -> tuple[str, int] | None:
+        """获取 section key，如果是 Family 节点则返回 None"""
         if item is None:
             return None
         data = item.data(0, Qt.UserRole)
         if isinstance(data, tuple) and len(data) == 2:
+            # 检查是否是 ("family", family_name) 格式
+            if data[0] == "family":
+                return None  # Family 节点不返回单个 section key
             return data  # type: ignore[return-value]
+        return None
+    
+    def get_family_sections(self, item: QTreeWidgetItem | None) -> list[tuple[str, int]] | None:
+        """如果是 Family 节点，返回该 Family 下所有 section keys"""
+        if item is None:
+            return None
+        data = item.data(0, Qt.UserRole)
+        if isinstance(data, tuple) and len(data) == 2 and data[0] == "family":
+            family_name = data[1]
+            return self._family_sections.get(family_name)
         return None
 
     def select_section(self, key: tuple[str, int] | None) -> None:

@@ -9,11 +9,20 @@ import numpy as np
 
 
 @dataclass(slots=True)
+class FamilyInfo:
+    """CGNS Family metadata."""
+    
+    name: str
+    bc_type: str | None = None  # FamilyBC BCType (e.g., "BCWall", "BCSymmetryPlane")
+    
+
+@dataclass(slots=True)
 class BoundaryInfo:
     """Metadata describing a boundary condition associated with a section."""
 
     name: str
     grid_location: str | None = None
+    family: str | None = None  # 关联的 Family 名称
 
 
 @dataclass(slots=True)
@@ -80,6 +89,7 @@ class CgnsModel:
     """Root container for a CGNS dataset."""
 
     zones: list[Zone] = field(default_factory=list)
+    families: dict[str, FamilyInfo] = field(default_factory=dict)  # Family name -> FamilyInfo
 
     def find_section(self, zone_name: str, section_id: int) -> Section | None:
         for zone in self.zones:
